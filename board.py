@@ -55,13 +55,13 @@ class Board(object):
         if y < 0 or y >= N: return False
         return True
 
-    def validate_move(self, x, y):
+    def is_illegal_move(self, x, y):
         if self._[x][y] != Stone.EMPTY: return 1 
         if self.check_3_3(x, y): return 2
         return 0
 
-    def make_move(self, x, y, valid=False): 
-        if not valid and self.validate_move(x, y): return False
+    def make_move(self, x, y, sure=False): 
+        if not sure and self.is_illegal_move(x, y): return False
         self.moves += 1
         self.set_stone(x, y, self.turn)
         self.set_last_move(x, y)
@@ -76,7 +76,8 @@ class Board(object):
         if self.scoreW >= WP: return Stone.WHITE
         return self.last
 
-    def check_game_end(self, x, y):
+    def check_game_end(self):
+        x, y = self.get_last_move()
         if self.scoreB >= WP or self.scoreW >= WP: return self.who_won()
         if self.check_game_end_along(x, y, -1,  0) + \
            self.check_game_end_along(x, y,  1,  0) + 1 == GOAL: return self.who_won()

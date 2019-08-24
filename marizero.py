@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F 
 import torch.optim as optim
 import numpy as np
+import os.path
 from collections import deque
 from board import Board
 from mcts import PolicyPi
@@ -15,7 +16,8 @@ H4 = 128
 LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
-N_EPISODE = 10
+N_EPISODE = 1
+SIZE_DATA = 10000
 
 class Net(nn.Module):
     """ network for both policy p and value function 
@@ -30,10 +32,10 @@ class Net(nn.Module):
         self.bn3 = nn.BatchNorm2d(H2)
         self.conv4 = nn.Conv2d(H2, H4, (3,3,), 1, 1)
         self.bn4 = nn.BatchNorm2d(H4)
-        self.conv5 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
-        self.bn5 = nn.BatchNorm2d(H4)
-        self.conv6 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
-        self.bn6 = nn.BatchNorm2d(H4)
+##         self.conv5 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
+##         self.bn5 = nn.BatchNorm2d(H4)
+##         self.conv6 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
+##         self.bn6 = nn.BatchNorm2d(H4)
 
         self.p_conv = nn.Conv2d(H4, 2, (1,1,), 1, 0)
         self.p_bn = nn.BatchNorm2d(2)
@@ -54,10 +56,10 @@ class Net(nn.Module):
         x = F.relu(self.bn3(x))
         x = self.conv4(x)
         x = F.relu(self.bn4(x))
-        x = self.conv5(x)
-        x = F.relu(self.bn5(x))
-        x = self.conv6(x)
-        x = F.relu(self.bn6(x))
+##         x = self.conv5(x)
+##         x = F.relu(self.bn5(x))
+##         x = self.conv6(x)
+##         x = F.relu(self.bn6(x))
 
         p_x = self.p_conv(x)
         p_x = F.relu(self.p_bn(p_x))
@@ -76,6 +78,7 @@ class Net(nn.Module):
 
 
 def legal_mask(S): return S[:,3,:,:].flatten().data.numpy()
+def xy(move): return move // N, move % N
 
 
 class MariZero(object):
@@ -94,11 +97,10 @@ class MariZero(object):
     """
     def __init__(self, game=None):
         self.game = game
-        self.data = deque(maxlen=10000)
-        self.testNet = Net()
-        self.mainNet = Net()
+        self.init_model()
         self.testPi = PolicyPi(self.testNet, self.fn_policy_value)
         self.mainPi = PolicyPi(self.mainNet, self.fn_policy_value)
+        self.data = deque(maxlen=SIZE_DATA)
         self.optim = optim.Adam(self.testNet.parameters(), 
                                 weight_decay=L2_CONST, lr=LEARNING_RATE)
 
@@ -111,6 +113,12 @@ class MariZero(object):
         model.eval()
         return model
 
+    def init_model(self):
+        self.testNet = os.path.isfile('./model/test_model.pt') and \
+                       self.load_model('test_model') or Net()
+        self.mainNet = os.path.isfile('./model/main_model.pt') and \
+                       self.load_model('main_model') or Net()
+
     def read_state(self, board):
         """ board -> S
         Defines the input layer S: read the current state from the board given.
@@ -118,14 +126,10 @@ class MariZero(object):
         0 -> color turn to play 
         1 -> BLACK stones
         2 -> WHITE stones
-        3 -> EMPTY space of legal-move 
+        3 -> EMPTY spaces of legal-move 
         4-6 -> enemy's stones captured (one-hot)
         7-9 -> my stones captured (one-hot)
         """
-        if board.turn == Stone.BLACK:
-            (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
-        else:
-            (cap_self, cap_enemy) = (board.scoreW, board.scoreB)
         S = torch.zeros(1, CI, N, N)
         S[:,0,:,:] = board.turn
         for x in range(N):
@@ -135,7 +139,12 @@ class MariZero(object):
                 elif board.get_stone(x, y) == Stone.WHITE:
                     S[:,2,x,y] = 1
                 else:
-                    if not board.validate_move(x, y): S[:,3,x,y] = 1
+                    if not board.is_illegal_move(x, y): S[:,3,x,y] = 1
+
+        if board.turn == Stone.BLACK:
+            (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
+        else:
+            (cap_self, cap_enemy) = (board.scoreW, board.scoreB)
         if cap_enemy:
             b2, b1, b0 = [ int(i) for i in f'{cap_enemy-1:03b}' ]
             S[:,4,:,:] = b2
@@ -149,14 +158,15 @@ class MariZero(object):
         return S
 
     def f_theta(self, states, gpu=False):
-        """ [ state S ] -> [ (P(s,-), v) ]
+        """ [ state S ] -> [ (P(s,-), v), ]
         get policy-value function from network, (p,v) = f_theta(s)
         p := P(s,-), where P(s,a) := Pr(a|s)
         """
-        batch_logP, batch_v = self.testNet(states)
+        batch_S = torch.tensor(states)
+        batch_logP, batch_v = self.testNet(batch_S)
         batch_P = np.exp(batch_logP.data.numpy())
         batch_v = batch_v.data.numpy()
-        batch_P, batch_v
+        return batch_P, batch_v
 
     def fn_policy_value(self, net, board):
         """ board -> P(s,-), v
@@ -190,10 +200,28 @@ class MariZero(object):
         # TODO
 
     def self_play(self):
+        """
+        generating self-play data: [ (state S, P(s,-), z), ]
+        """
         board = Board()
-
+        Ss, Ps, turns = [], [], []
+        self.testPi.reset_tree()
         while True:
-            pass
+            move, P = self.testPi.fn_action_P(board)
+            Ss.append(self.read_state(board))
+            Ps.append(P)
+            turns.append(board.whose_turn())
+
+            board.make_move(xy(move))
+            self.testPi.update_root(move)
+
+            winner = board.check_game_end()
+            if not winner: continue
+            turns = np.array(turns)
+            zs = np.zeros(len(turns))
+            zs[turns == winner] = 1
+            zs[turns != winner] = -1
+            return zip(Ss, Ps, zs)
         
 
     def train(self):

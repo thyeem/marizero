@@ -63,7 +63,7 @@ class SofiAI(object):
         bestx = besty = 0
         if x > 0 and y > 0: 
             board.make_move(x, y)
-            if board.check_game_end(x, y): 
+            if board.check_game_end(): 
                 if is_maximizer: 
                     bestval = -INF + self.coeff['depth'] * depth
                 else:
@@ -74,13 +74,14 @@ class SofiAI(object):
                 bestval = self.evaluate_state(deepcopy(board), depth)
                 return bestval, x, y
 
-        #------------------------------------------------------------------------------------
+        #----------------------------------------------------------------
 
         child = self.get_child(board)
         if is_maximizer:
             bestval = -INF
             for i, j in child:
-                val, _, _ = self.minimax(deepcopy(board), i, j, depth+1, False, alpha, beta)
+                val, _, _ = self.minimax(deepcopy(board), i, j, 
+                                         depth+1, False, alpha, beta)
                 if depth == 0:
                     if val > bestval:
                         bestval = val 
@@ -93,7 +94,8 @@ class SofiAI(object):
         else:
             bestval = +INF
             for i, j in child:
-                val, _, _ = self.minimax(deepcopy(board), i, j, depth+1, True, alpha, beta)
+                val, _, _ = self.minimax(deepcopy(board), i, j, 
+                                         depth+1, True, alpha, beta)
                 bestval = min(bestval, val)
                 beta = min(beta, bestval) 
                 if beta <= alpha: break
@@ -105,20 +107,22 @@ class SofiAI(object):
 
         val_depth = self.coeff['depth'] * depth 
         val_score = self.coeff['score'] * \
-                    (math.pow(board.get_score(o), 1.4) - math.pow(board.get_score(x), 1.4))
-        val_pattern = 0
-        self.get_pattern_score(board, o, x)
+                    (math.pow(board.get_score(o), 1.4) - 
+                     math.pow(board.get_score(x), 1.4))
+        val_pt = 0
+        self.get_pt_score(board, o, x)
         for pt, e in self.d.items():
             if not pt in self.score: continue
-            val_pattern += self.score[pt] * len(e)
-        return val_depth + val_score + val_pattern
+            val_pt += self.score[pt] * len(e)
+        return val_depth + val_score + val_pt
 
     def get_child(self, board): 
         x = board.last_turn()
         o = x == Stone.BLACK and Stone.WHITE or Stone.BLACK
-        self.get_pattern_candidate(board, o, x)
-        if not len(self.d): self.get_pattern_no_child(board, o, x)
-        candy = sorted(self.d.items(), key=lambda x: self.prior[x[0]], reverse=True)
+        self.get_pt_candidate(board, o, x)
+        if not len(self.d): self.get_pt_no_child(board, o, x)
+        candy = sorted(self.d.items(), 
+                       key=lambda x: self.prior[x[0]], reverse=True)
         child = [ e for _, es in candy for e in es ]
         return child
 
@@ -130,65 +134,66 @@ class SofiAI(object):
         else:
             return Stone.EMPTY
 
-    def get_pattern_score(self, board, o, x): 
+    def get_pt_score(self, board, o, x): 
         self.d.clear()
         for i in range(N):
             for j in range(N):
                 if board.get_stone(i, j) == Stone.EMPTY:
-                    self.find_pattern(board, i, j, o, x, '_oooa')
-                    self.find_pattern(board, i, j, o, x, '_ooooa')
-                    self.find_pattern(board, i, j, o, x, '_xxxa')
-                    self.find_pattern(board, i, j, o, x, '_xxxxa')
+                    self.find_pt(board, i, j, o, x, '_oooa')
+                    self.find_pt(board, i, j, o, x, '_ooooa')
+                    self.find_pt(board, i, j, o, x, '_xxxa')
+                    self.find_pt(board, i, j, o, x, '_xxxxa')
                 else:
-                    self.find_pattern(board, i, j, o, x, 'oxxa')
-                    self.find_pattern(board, i, j, o, x, 'xooooa')
-                    self.find_pattern(board, i, j, o, x, 'xooa')
+                    self.find_pt(board, i, j, o, x, 'oxxa')
+                    self.find_pt(board, i, j, o, x, 'xooooa')
+                    self.find_pt(board, i, j, o, x, 'xooa')
 
-    def get_pattern_candidate(self, board, o, x): 
+    def get_pt_candidate(self, board, o, x): 
         self.d.clear()
         for i in range(N):
             for j in range(N):
                 if board.get_stone(i, j) == Stone.EMPTY: 
-                    self.find_pattern(board, i, j, o, x, '_ooa')
-                    self.find_pattern(board, i, j, o, x, '_xxa')
-                    self.find_pattern(board, i, j, o, x, '_x_xa')
-                    self.find_pattern(board, i, j, o, x, '_o_oa')
+                    self.find_pt(board, i, j, o, x, '_ooa')
+                    self.find_pt(board, i, j, o, x, '_xxa')
+                    self.find_pt(board, i, j, o, x, '_x_xa')
+                    self.find_pt(board, i, j, o, x, '_o_oa')
                 else:
-                    self.find_pattern(board, i, j, o, x, 'oooa')
-                    self.find_pattern(board, i, j, o, x, 'xxxa')
-                    self.find_pattern(board, i, j, o, x, 'oxxa')
-                    self.find_pattern(board, i, j, o, x, 'xooa')
-                    self.find_pattern(board, i, j, o, x, 'oao')
-                    self.find_pattern(board, i, j, o, x, 'xax')
-                    self.find_pattern(board, i, j, o, x, 'ooo_a')
-                    self.find_pattern(board, i, j, o, x, 'xxx_a')
+                    self.find_pt(board, i, j, o, x, 'oooa')
+                    self.find_pt(board, i, j, o, x, 'xxxa')
+                    self.find_pt(board, i, j, o, x, 'oxxa')
+                    self.find_pt(board, i, j, o, x, 'xooa')
+                    self.find_pt(board, i, j, o, x, 'oao')
+                    self.find_pt(board, i, j, o, x, 'xax')
+                    self.find_pt(board, i, j, o, x, 'ooo_a')
+                    self.find_pt(board, i, j, o, x, 'xxx_a')
 
-    def get_pattern_no_child(self, board, o, x): 
+    def get_pt_no_child(self, board, o, x): 
         self.d.clear()
         for i in range(N):
             for j in range(N):
                 if board.get_stone(i, j) == Stone.EMPTY: continue
                 else:
-                    self.find_pattern(board, i, j, o, x, 'oa')
-                    self.find_pattern(board, i, j, o, x, 'xa')
+                    self.find_pt(board, i, j, o, x, 'oa')
+                    self.find_pt(board, i, j, o, x, 'xa')
 
-    def find_pattern(self, board, i, j, o, x, pattern):
-        self.find_pattern_along(board, i, j,  1,  0, o, x, pattern)
-        self.find_pattern_along(board, i, j, -1,  0, o, x, pattern)
-        self.find_pattern_along(board, i, j,  0,  1, o, x, pattern)
-        self.find_pattern_along(board, i, j,  0, -1, o, x, pattern)
-        self.find_pattern_along(board, i, j,  1,  1, o, x, pattern)
-        self.find_pattern_along(board, i, j,  1, -1, o, x, pattern)
-        self.find_pattern_along(board, i, j, -1,  1, o, x, pattern)
-        self.find_pattern_along(board, i, j, -1, -1, o, x, pattern)
+    def find_pt(self, board, i, j, o, x, pt):
+        self.find_pt_along(board, i, j,  1,  0, o, x, pt)
+        self.find_pt_along(board, i, j, -1,  0, o, x, pt)
+        self.find_pt_along(board, i, j,  0,  1, o, x, pt)
+        self.find_pt_along(board, i, j,  0, -1, o, x, pt)
+        self.find_pt_along(board, i, j,  1,  1, o, x, pt)
+        self.find_pt_along(board, i, j,  1, -1, o, x, pt)
+        self.find_pt_along(board, i, j, -1,  1, o, x, pt)
+        self.find_pt_along(board, i, j, -1, -1, o, x, pt)
 
-    def find_pattern_along(self, board, i, j, di, dj, o, x, pattern): 
-        for s in range(len(pattern)):
-            if not board.is_inside(i + s*di, j + s*dj): return 
-            if board.get_stone(i + s*di, j + s*dj) != self.char_to_stone(pattern[s], o, x): return 
+    def find_pt_along(self, board, i, j, di, dj, o, x, pt): 
+        for s in range(len(pt)):
+            if not board.is_inside(i+s*di, j+s*dj): return 
+            if board.get_stone(i+s*di, j+s*dj) != \
+               self.char_to_stone(pt[s], o, x): return 
 
-        for s in range(len(pattern)):
-            if pattern[s] == 'a': 
-                if pattern in self.d: self.d[pattern].add((i + s*di, j + s*dj,))
-                else: self.d[pattern] = {(i + s*di, j + s*dj,)}
+        for s in range(len(pt)):
+            if pt[s] == 'a': 
+                if pt in self.d: self.d[pt].add((i+s*di, j+s*dj,))
+                else: self.d[pt] = {(i+s*di, j+s*dj,)}
 

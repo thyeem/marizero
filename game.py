@@ -47,7 +47,7 @@ class Game(object):
             if player == Player.HUMAN:
                 x, y = self.screen.get_move()
                 if x == -1 or y == -1: return 
-                violate = self.board.validate_move(x, y)
+                violate = self.board.is_illegal_move(x, y)
                 if not violate: self.board.make_move(x, y)
 
             elif player == Player.SOFIAI:
@@ -72,7 +72,7 @@ class Game(object):
                 return 
 
             if not violate: 
-                self.winner = self.board.check_game_end(x, y)
+                self.winner = self.board.check_game_end()
                 if API: self.write_board(BRD_DATA)
             self.screen.update_screen(self, violate, y, 2*x)
 
