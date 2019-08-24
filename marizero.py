@@ -17,10 +17,17 @@ LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
 N_EPISODE = 1
+N_EPOCH = 3
 SIZE_DATA = 10000
+SIZE_BATCH = 512
+RATIO_OVERTURN = 0.55
+
 
 class Net(nn.Module):
     """ network for both policy p and value function 
+    consist of 1 input layer and 2 output layers:
+    policy p network -> P(s, a)
+    value v network -> v
     """
     def __init__(self):
         super().__init__()
@@ -78,6 +85,7 @@ class Net(nn.Module):
 
 
 def legal_mask(S): return S[:,3,:,:].flatten().data.numpy()
+
 def xy(move): return move // N, move % N
 
 
@@ -120,11 +128,11 @@ class MariZero(object):
 
     def update_model(self, overturn=False): 
         file = self.path_best_model_file()
-        if not overturn: 
+        if overturn: 
+            self.save_model(file)
+        else:
             self.model = self.load_model(file)
             self.init_optim()
-        else:
-            self.save_model(file)
 
     def init_optim(self):
         self.optim = optim.Adam(self.model.parameters(), 
@@ -144,7 +152,7 @@ class MariZero(object):
         4-6 -> enemy's stones captured (one-hot)
         7-9 -> my stones captured (one-hot)
         """
-        S = torch.zeros(1, CI, N, N)
+        S = np.zeros(1, CI, N, N)
         S[:,0,:,:] = board.turn
         for x in range(N):
             for y in range(N):
@@ -171,21 +179,11 @@ class MariZero(object):
             S[:,9,:,:] = b0
         return S
 
-    def f_theta(self, states, gpu=False):
-        """ [ state S ] -> [ (P(s,-), v), ]
-        get policy-value function from network, (p,v) = f_theta(s)
-        p := P(s,-), where P(s,a) := Pr(a|s)
-        """
-        batch_S = torch.tensor(states)
-        batch_logP, batch_v = self.model(batch_S)
-        batch_P = np.exp(batch_logP.data.numpy())
-        batch_v = batch_v.data.numpy()
-        return batch_P, batch_v
-
     def fn_policy_value(self, net, board):
         """ board -> P(s,-), v
-        Used in MCTS when expanding tree.
-        Illegal moves are filtered here.
+        get policy p and value fn v from network, (p,v) = f_theta(s)
+        p := P(s,-), where P(s,a) = Pr(a|s)
+        used when expanding tree and illegal moves are filtered here.
         """
         S = self.read_state(board)
         logP, v = net(S)
@@ -196,39 +194,38 @@ class MariZero(object):
         P /= Psum
         return P, v
         
-    def augment_data(self, data_set):
-        """ augment data set by flipping and rotating
-        by definition x8 data can be produced
+    def augment_data(self, data):
+        """ data augmentation using the symmetry of game board.
+        Augments data set by flipping and rotating
+        by definition x8 num of data can be produced.
         """
-        equi = []
-        for data in data_set:
-            rot  = [ np.rot90(data, i) for i in range(4) ] 
-            flip = [ np.fliplr(r) for r in rot ]
-            equi.extend(rot + flip)
-        self.data.extend(equi)
-
-    def next_move(self, board):
-        """ interface responsible for answering game.py module
-        """
-        S = self.read_state(board)
-        # TODO
+        for S, PI, z in data:
+            R = [ np.rot90(S, i) for i in range(4) ] 
+            F = [ np.fliplr(r) for r in R ]
+            e_S = R + F
+            pi = PI.reshape(N,N)
+            R = [ np.rot90(pi, i) for i in range(4) ] 
+            F = [ np.fliplr(r) for r in R ]
+            e_pi = R + F
+            e_z = [z] * len(e_S)
+            self.data.extend(zip(e_S, e_pi, e_z))
 
     def sample_from_pi(self, pi):
-        """ pi(-|s) -> (best_move, pi(s) as 1-d vector)
+        """ pi(-|s) -> (best_move, PI)
+        PI := pi(s) in forms of 1-d vector (for training) 
         exploration using Dirichlet noise was not applied unlike the Zero.
-        literally sampling, but it depends on the temperature, tau
-        when pi is calculated. converged to the best move as tau -> 0
+        Literally sampling, but it depends on the temperature, tau
+        when pi is calculated. Converged to the best move as tau -> 0
         """
         moves, probs = zip(*pi.items())
         move = np.random.choice(moves, 1, p=probs)
-        pi_s = np.zeros(N*N)
-        pi_s[moves] = probs
-        return move, pi_s
+        PI = np.zeros(N*N)
+        PI[moves] = probs
+        return move, PI
 
     def self_play(self):
-        """
-        generating self-play data: [ (state S, pi(s), z), ]
-        PI := pi(s) in forms of 1-d vector  
+        """ None -> [ (state S, PI, z), ]
+        generates self-play data for training the model
         """
         board = Board()
         Ss, PIs, turns = [], [], []
@@ -251,21 +248,49 @@ class MariZero(object):
             zs[turns != winner] = -1
             return zip(Ss, PIs, zs)
         
-
     def train(self):
         """
-        loss := (z-v)^2 - pi'log(p) + c||theta||
+        loss := (z-v)^2 - pi'log(p) + c||theta||^2
+        batch from self.data := [ (S, PI, z), ]
+        S -> input 
+        z -> reward, target of value network
+        v -> output of value network
+        cross entropy of pi(a|s) and P(s,a)
+        pi -> pi(-|s), PI := 1-d vector form of pi(-|s)
+        log(p) -> output of policy p network
+        L2 regularization was considered as L2 penalty in optim
         """
         self.model.train()
         while True:
             for _ in range(N_EPISODE):
-                self.data.extend(self.self_play())
+                data = self.self_play()
+                self.augment_data(data)
 
+            if len(self.data) < SIZE_BATCH: continue
+            batch = np.random.choice(self.data, SIZE_BATCH)
+            S, pi, z = ( torch.FloatTensor(x) for x in zip(*batch) )
 
-    def update_parameters(self, stack, is_winner):
+            for i in range(1, N_EPOCH+1):
+                self.optim.zero_grad()
+                logP, v = self.model(S)
+                loss_v = F.mse_loss(v.view(-1), z)
+                loss_P = -torch.mean(torch.sum(pi * logP, 1))
+                loss = loss_v + loss_P
+                loss.backward()
+                self.optim.step()
+                print(f'epoch {i:02d}  loss {loss:.6f}')
+            overturn = self.evaluate_model()
+            self.update_model(overturn)
+
+    def evaluate_model(self): 
+
         pass
-        # TODO
 
+    def next_move(self, board):
+        """ interface responsible for answering game.py module
+        """
+        S = self.read_state(board)
+        # TODO
 
 
 if __name__ == '__main__':
