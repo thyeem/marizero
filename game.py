@@ -72,7 +72,7 @@ class Game(object):
                 return 
 
             if not violate: 
-                self.winner = self.board.check_quit(x, y)
+                self.winner = self.board.check_game_end(x, y)
                 if API: self.write_board(BRD_DATA)
             self.screen.update_screen(self, violate, y, 2*x)
 

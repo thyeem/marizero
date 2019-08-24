@@ -70,30 +70,25 @@ class Board(object):
         return True
 
     def who_won(self):
-        """ should be called in check_quit fn only
+        """ should be called in check_game_end fn only
         """
         if self.scoreB >= WP: return Stone.BLACK
         if self.scoreW >= WP: return Stone.WHITE
         return self.last
 
-    def check_quit(self, x, y):
-        if self.scoreB >= WP or self.scoreW >= WP: 
-            return self.who_won()
-        if self.check_quit_along(x, y, -1,  0) + \
-           self.check_quit_along(x, y,  1,  0) + 1 == GOAL: 
-            return self.who_won()
-        if self.check_quit_along(x, y,  0, -1) + \
-           self.check_quit_along(x, y,  0,  1) + 1 == GOAL: 
-            return self.who_won()
-        if self.check_quit_along(x, y, -1, -1) + \
-           self.check_quit_along(x, y,  1,  1) + 1 == GOAL: 
-            return self.who_won()
-        if self.check_quit_along(x, y, -1,  1) + \
-           self.check_quit_along(x, y,  1, -1) + 1 == GOAL: 
-            return self.who_won()
+    def check_game_end(self, x, y):
+        if self.scoreB >= WP or self.scoreW >= WP: return self.who_won()
+        if self.check_game_end_along(x, y, -1,  0) + \
+           self.check_game_end_along(x, y,  1,  0) + 1 == GOAL: return self.who_won()
+        if self.check_game_end_along(x, y,  0, -1) + \
+           self.check_game_end_along(x, y,  0,  1) + 1 == GOAL: return self.who_won()
+        if self.check_game_end_along(x, y, -1, -1) + \
+           self.check_game_end_along(x, y,  1,  1) + 1 == GOAL: return self.who_won()
+        if self.check_game_end_along(x, y, -1,  1) + \
+           self.check_game_end_along(x, y,  1, -1) + 1 == GOAL: return self.who_won()
         return False
 
-    def check_quit_along(self, x, y, dx, dy):
+    def check_game_end_along(self, x, y, dx, dy):
         rows = 0
         while True:
             x += dx
@@ -140,8 +135,8 @@ class Board(object):
         if self._[x + 3*dx][y + 3*dy] == self.turn and \
            self._[x + 2*dx][y + 2*dy] == self.last and \
            self._[x + 1*dx][y + 1*dy] == self.last:
-                self._[x + 2*dx][y + 2*dy] = Stone.EMPTY
-                self._[x + 1*dx][y + 1*dy] = Stone.EMPTY
-                if self.turn == Stone.BLACK: self.scoreB += 2
-                else: self.scoreW += 2
+            self._[x + 2*dx][y + 2*dy] = Stone.EMPTY
+            self._[x + 1*dx][y + 1*dy] = Stone.EMPTY
+            if self.turn == Stone.BLACK: self.scoreB += 2
+            else: self.scoreW += 2
 

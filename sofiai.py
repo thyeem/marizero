@@ -63,7 +63,7 @@ class SofiAI(object):
         bestx = besty = 0
         if x > 0 and y > 0: 
             board.make_move(x, y)
-            if board.check_quit(x, y): 
+            if board.check_game_end(x, y): 
                 if is_maximizer: 
                     bestval = -INF + self.coeff['depth'] * depth
                 else:

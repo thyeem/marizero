@@ -8,32 +8,39 @@ from board import Board
 from mcts import PolicyPi
 from const import Stone, N
 
-C = 8
-H = 64
+CI = 10
+H1 = 32
+H2 = 64
+H4 = 128
 LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
+N_EPISODE = 10
 
 class Net(nn.Module):
     """ network for both policy p and value function 
     """
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(C, H, (3,3,), 1, 1)
-        self.bn1 = nn.BatchNorm2d(H)
-        self.conv2 = nn.Conv2d(H, H, (3,3,), 1, 1)
-        self.bn2 = nn.BatchNorm2d(H)
-        self.conv3 = nn.Conv2d(H, H, (3,3,), 1, 1)
-        self.bn3 = nn.BatchNorm2d(H)
-        self.conv4 = nn.Conv2d(H, H, (3,3,), 1, 1)
-        self.bn4 = nn.BatchNorm2d(H)
+        self.conv1 = nn.Conv2d(CI, H1, (3,3,), 1, 1)
+        self.bn1 = nn.BatchNorm2d(H1)
+        self.conv2 = nn.Conv2d(H1, H2, (3,3,), 1, 1)
+        self.bn2 = nn.BatchNorm2d(H2)
+        self.conv3 = nn.Conv2d(H2, H2, (3,3,), 1, 1)
+        self.bn3 = nn.BatchNorm2d(H2)
+        self.conv4 = nn.Conv2d(H2, H4, (3,3,), 1, 1)
+        self.bn4 = nn.BatchNorm2d(H4)
+        self.conv5 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
+        self.bn5 = nn.BatchNorm2d(H4)
+        self.conv6 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
+        self.bn6 = nn.BatchNorm2d(H4)
 
-        self.p_conv = nn.Conv2d(H, 2, (1,1,), 1, 0)
+        self.p_conv = nn.Conv2d(H4, 2, (1,1,), 1, 0)
         self.p_bn = nn.BatchNorm2d(2)
         self.p_fc1 = nn.Linear(2*N*N, N*N)
         self.logsoftmax = nn.LogSoftmax(dim=1)
 
-        self.v_conv = nn.Conv2d(H, 1, (1,1,), 1, 0)
+        self.v_conv = nn.Conv2d(H4, 1, (1,1,), 1, 0)
         self.v_bn = nn.BatchNorm2d(1)
         self.v_fc1 = nn.Linear(N*N, 256)
         self.v_fc2 = nn.Linear(256, 1)
@@ -47,6 +54,10 @@ class Net(nn.Module):
         x = F.relu(self.bn3(x))
         x = self.conv4(x)
         x = F.relu(self.bn4(x))
+        x = self.conv5(x)
+        x = F.relu(self.bn5(x))
+        x = self.conv6(x)
+        x = F.relu(self.bn6(x))
 
         p_x = self.p_conv(x)
         p_x = F.relu(self.p_bn(p_x))
@@ -73,23 +84,26 @@ class MariZero(object):
     Feel free to meet them all at http://sofimarie.com
 
     fn and var names based on the following notaion summarized:
-    a_t = argmax_a (Q(s,a) + u(s,a)) 
+    (P(s,-), v) = f_theta(s)
+    pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)
+    a_t = argmax_a ( U(s,a) := Q(s,a) + u(s,a) ) 
     u(s,a) = c_puct * P(s,a) * sqrt(Sigma_b N(s,b)) / (1 + N(s,a))
     N(s,a) = Sigma_i^n 1(s,a,i)
     Q(s,a) = W(s,a) / N(s,a), where W(s,a) := W(s,a) + v
-    (P(s,-), v) = f_theta(s)
-    pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)
+
     """
     def __init__(self, game=None):
         self.game = game
         self.data = deque(maxlen=10000)
-        self.model = Net()
-        self.pi = PolicyPi()
-        self.optim = optim.Adam(self.model.parameters(), 
+        self.testNet = Net()
+        self.mainNet = Net()
+        self.testPi = PolicyPi(self.testNet, self.fn_policy_value)
+        self.mainPi = PolicyPi(self.mainNet, self.fn_policy_value)
+        self.optim = optim.Adam(self.testNet.parameters(), 
                                 weight_decay=L2_CONST, lr=LEARNING_RATE)
 
     def save_model(self, name):
-        torch.save(self.model.state_dict(), f'./model/{name}.pt')
+        torch.save(self.testNet.state_dict(), f'./model/{name}.pt')
 
     def load_model(self, name):
         model = Net()
@@ -112,7 +126,7 @@ class MariZero(object):
             (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
         else:
             (cap_self, cap_enemy) = (board.scoreW, board.scoreB)
-        S = torch.zeros(1, C, N, N)
+        S = torch.zeros(1, CI, N, N)
         S[:,0,:,:] = board.turn
         for x in range(N):
             for y in range(N):
@@ -139,18 +153,18 @@ class MariZero(object):
         get policy-value function from network, (p,v) = f_theta(s)
         p := P(s,-), where P(s,a) := Pr(a|s)
         """
-        batch_logP, batch_v = self.model(states)
+        batch_logP, batch_v = self.testNet(states)
         batch_P = np.exp(batch_logP.data.numpy())
         batch_v = batch_v.data.numpy()
         batch_P, batch_v
 
-    def policy_p(self, board):
+    def fn_policy_value(self, net, board):
         """ board -> P(s,-), v
         Used in MCTS when expanding tree.
         Illegal moves are filtered here.
         """
         S = self.read_state(board)
-        logP, v = self.model(S)
+        logP, v = net(S)
         logP += 1e-10
         P = np.exp(logP.flatten().data.numpy()) * legal_mask(S)
         Psum = P.sum()
@@ -185,11 +199,11 @@ class MariZero(object):
     def train(self):
         """
         loss := (z-v)^2 - pi'log(p) + c||theta||
-
         """
-        self.model.train()
+        self.testNet.train()
         while True:
-            pass
+            for _ in range(N_EPISODE):
+                self.data.extend(self.self_play())
 
 
     def update_parameters(self, stack, is_winner):
