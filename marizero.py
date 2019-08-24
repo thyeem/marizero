@@ -100,13 +100,13 @@ class MariZero(object):
     def read_state(self, board):
         """ board -> S
         Defines the input layer S: read the current state from the board given.
-        return state S as a tensor of 8 channels
-        0 - turn to play 
-        1 - BLACK 
-        2 - WHITE
-        3 - EMPTY space to move legally
-        4:6 - enemy's stones captured 
-        6:8 - my stones captured
+        return state S as a tensor of 10 channels
+        0 -> color turn to play 
+        1 -> BLACK stones
+        2 -> WHITE stones
+        3 -> EMPTY space of legal-move 
+        4-6 -> enemy's stones captured (one-hot)
+        7-9 -> my stones captured (one-hot)
         """
         if board.turn == Stone.BLACK:
             (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
@@ -114,9 +114,6 @@ class MariZero(object):
             (cap_self, cap_enemy) = (board.scoreW, board.scoreB)
         S = torch.zeros(1, C, N, N)
         S[:,0,:,:] = board.turn
-        S[:,4:6,:,:] = 0.125 * cap_enemy
-        S[:,6:8,:,:] = 0.125 * cap_self
-
         for x in range(N):
             for y in range(N):
                 if board.get_stone(x, y) == Stone.BLACK:
@@ -125,6 +122,16 @@ class MariZero(object):
                     S[:,2,x,y] = 1
                 else:
                     if not board.validate_move(x, y): S[:,3,x,y] = 1
+        if cap_enemy:
+            b2, b1, b0 = [ int(i) for i in f'{cap_enemy-1:03b}' ]
+            S[:,4,:,:] = b2
+            S[:,5,:,:] = b1
+            S[:,6,:,:] = b0
+        if cap_self:
+            b2, b1, b0 = [ int(i) for i in f'{cap_self-1:03b}' ]
+            S[:,7,:,:] = b2
+            S[:,8,:,:] = b1
+            S[:,9,:,:] = b0
         return S
 
     def f_theta(self, states, gpu=False):

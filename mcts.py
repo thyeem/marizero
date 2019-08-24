@@ -61,8 +61,8 @@ class PolicyPi(object):
         self.select()
         self.backup()
 
-    def fn_pi(self, board, tau=1):
-        """ get pi as defined in the paper
+    def policy_pi(self, board, tau=1):
+        """ get policy pi as defined in the zero paper
         pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)
         """
         for _ in range(N_SEARCH):
@@ -75,5 +75,5 @@ class PolicyPi(object):
 
     def get_move(self, board, tau=1):
 
-        pi = self.fn_pi(board, tau)
+        pi = self.policy_pi(board, tau)
 
