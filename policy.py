@@ -2,12 +2,13 @@ import math
 import numpy as np
 from copy import deepcopy
 from const import N
+import marizero as mario
 
 C_PUCT = math.sqrt(2)
 N_SEARCH = 1600
 
 class Node(object):
-    """ definition of node used in Monte-Carlo search for pi policy
+    """ definition of node used in Monte-Carlo search for policy pi
     """
     def __init__(self, prev, P):
         self.prev = prev
@@ -31,6 +32,9 @@ class Node(object):
         return self.Q + self.u
 
 
+def xy(move): return move // N, move % N
+
+
 class TT(object):
     """
     To decide the next move -> to find a =~ pi
@@ -42,35 +46,13 @@ class TT(object):
     Q(s,a) = W(s,a) / N(s,a), where W(s,a) := W(s,a) + v
     (P(s,-), v) = f_theta(s)
 
-    fn_policy_value(self.net, board) ->
-    returns tuple( P(s,a), v ) as a result of self.net feed-forward.
-
     """
-    def __init__(self, net, fn_policy_value):
+    def __init__(self, net):
         self.root = Node(None, 1.)
         self.net = net
-        self.fn_policy_value = fn_policy_value
 
     def reset_tree(self):
         self.update_root(-1)
-
-    def select(self):
-        node = self.root
-        while True:
-            if node.is_leaf(): return node
-            move, node = max(node.next.items(), key=lambda x: x[1].Q_plus_u())
-
-    def backup(self, node):
-        pass
-
-
-    def search(self):
-        """ single search without any MC rollouts
-        process (select -> expand and evaluate -> backup) 1x
-        """
-        #TODO
-        self.select()
-        self.backup()
 
     def update_root(self, move):
         if move in self.root.next:
@@ -79,6 +61,51 @@ class TT(object):
         else:
             self.root = Node(None, 1.)
 
+    def select(self, board):
+        node = self.root
+        while True:
+            if node.is_leaf(): return node
+            move, node = max(node.next.items(), key=lambda x: x[1].Q_plus_u())
+            assert board.is_illegal_move(xy(move)) == 0
+            board.make_move(xy(move))
+
+    def expand(self, node, P):
+        for move, prob in P:
+            node.next[move] = Node(self, prob)
+
+    def backup(self, node, v):
+        node.N += 1
+        node.Q += 1.*(v - node.Q) / node.N
+        if node.prev: self.backup(node.prev, -v)
+
+    def search(self, board):
+        """ single search without any MC rollouts
+        process (select -> expand and evaluate -> backup) 1x
+        """
+        leaf = self.select(board)
+        winner = board.check_game_end()
+        if winner:
+            v = winner == board.whose_turn() and 1. or -1.
+        else:
+            P, v = self.fn_policy_value(board)
+            self.expand(leaf, P)
+        self.backup(leaf, -v)
+
+    def fn_policy_value(self, board):
+        """ board -> ( P(s,-), v )
+        (p,v) = f_theta(s)
+        get policy p and value fn v from network feed-forward.
+        p := P(s,-), where P(s,a) = Pr(a|s)
+        used when expanding tree and illegal moves are filtered here.
+        """
+        S = mario.read_state(board)
+        logP, v = self.net(S)
+        logP += 1e-10
+        P = np.exp(logP.flatten().data.numpy()) * valid_move_mask(S)
+        Psum = P.sum()
+        assert Psum != 0
+        P /= Psum
+        return P, v
 
     def fn_pi(self, board, num_search=N_SEARCH):
         """ board -> pi(a|s) look-up table

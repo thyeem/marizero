@@ -4,9 +4,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import os.path
+import policy
 from collections import deque
 from board import Board
-from mcts import TT
 from const import Stone, N
 
 CI = 10
@@ -84,14 +84,56 @@ class Net(nn.Module):
         return p_x, v_x
 
 
-def legal_mask(S): return S[:,3,:,:].flatten().data.numpy()
+def valid_move_mask(S): 
+    """ returns a flattened array of valid move mask-layer
+    """
+    return S[:,3,:,:].flatten().data.numpy()
 
 def xy(move): return move // N, move % N
 
+def read_state(board):
+    """ board -> S
+    Defines the input layer S: read the current state from the board given.
+    return state S as a tensor of 10 channels
+    0 -> color turn to play 
+    1 -> BLACK stones
+    2 -> WHITE stones
+    3 -> EMPTY spaces of legal-move 
+    4-6 -> enemy's stones captured (one-hot)
+    7-9 -> my stones captured (one-hot)
+    """
+    S = np.zeros(1, CI, N, N)
+    S[:,0,:,:] = board.turn
+    for x in range(N):
+        for y in range(N):
+            if board.get_stone(x, y) == Stone.BLACK:
+                S[:,1,x,y] = 1
+            elif board.get_stone(x, y) == Stone.WHITE:
+                S[:,2,x,y] = 1
+            else:
+                if not board.is_illegal_move(x, y): S[:,3,x,y] = 1
+
+    if board.turn == Stone.BLACK:
+        (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
+    else:
+        (cap_self, cap_enemy) = (board.scoreW, board.scoreB)
+    if cap_enemy:
+        b2, b1, b0 = [ int(i) for i in f'{cap_enemy-1:03b}' ]
+        S[:,4,:,:] = b2
+        S[:,5,:,:] = b1
+        S[:,6,:,:] = b0
+    if cap_self:
+        b2, b1, b0 = [ int(i) for i in f'{cap_self-1:03b}' ]
+        S[:,7,:,:] = b2
+        S[:,8,:,:] = b1
+        S[:,9,:,:] = b0
+    return S
+
 
 class MariZero(object):
-    """ MariZero: MariAI without any human domain knowledge.
-    MariAI: AI based on MCTS play rollouts
+    """ MariZero is a BCF-AI without any human domain knowledge.
+    This is the MariAI's next work using neural networks.
+    MariAI also was a BCF-AI based on MCTS play rollouts.
     Feel free to meet them all at http://sofimarie.com
 
     fn and var names based on the following notaion summarized:
@@ -108,7 +150,7 @@ class MariZero(object):
         """
         self.game = game
         self.init_model()
-        self.pi = TT(self.model, self.fn_policy_value)
+        self.pi = policy.TT(self.model)
         self.data = deque(maxlen=SIZE_DATA)
 
     def init_model(self):
@@ -141,59 +183,6 @@ class MariZero(object):
     def path_best_model_file(self):
         return f'./model/best_model.pt'
 
-    def read_state(self, board):
-        """ board -> S
-        Defines the input layer S: read the current state from the board given.
-        return state S as a tensor of 10 channels
-        0 -> color turn to play 
-        1 -> BLACK stones
-        2 -> WHITE stones
-        3 -> EMPTY spaces of legal-move 
-        4-6 -> enemy's stones captured (one-hot)
-        7-9 -> my stones captured (one-hot)
-        """
-        S = np.zeros(1, CI, N, N)
-        S[:,0,:,:] = board.turn
-        for x in range(N):
-            for y in range(N):
-                if board.get_stone(x, y) == Stone.BLACK:
-                    S[:,1,x,y] = 1
-                elif board.get_stone(x, y) == Stone.WHITE:
-                    S[:,2,x,y] = 1
-                else:
-                    if not board.is_illegal_move(x, y): S[:,3,x,y] = 1
-
-        if board.turn == Stone.BLACK:
-            (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
-        else:
-            (cap_self, cap_enemy) = (board.scoreW, board.scoreB)
-        if cap_enemy:
-            b2, b1, b0 = [ int(i) for i in f'{cap_enemy-1:03b}' ]
-            S[:,4,:,:] = b2
-            S[:,5,:,:] = b1
-            S[:,6,:,:] = b0
-        if cap_self:
-            b2, b1, b0 = [ int(i) for i in f'{cap_self-1:03b}' ]
-            S[:,7,:,:] = b2
-            S[:,8,:,:] = b1
-            S[:,9,:,:] = b0
-        return S
-
-    def fn_policy_value(self, net, board):
-        """ board -> P(s,-), v
-        get policy p and value fn v from network, (p,v) = f_theta(s)
-        p := P(s,-), where P(s,a) = Pr(a|s)
-        used when expanding tree and illegal moves are filtered here.
-        """
-        S = self.read_state(board)
-        logP, v = net(S)
-        logP += 1e-10
-        P = np.exp(logP.flatten().data.numpy()) * legal_mask(S)
-        Psum = P.sum()
-        assert Psum != 0
-        P /= Psum
-        return P, v
-        
     def augment_data(self, data):
         """ data augmentation using the symmetry of game board.
         Augments data set by flipping and rotating
@@ -233,7 +222,7 @@ class MariZero(object):
         while True:
             pi = self.pi.fn_pi(board)
             move, pi = self.sample_from_pi(pi)
-            _S.append(self.read_state(board))
+            _S.append(read_state(board))
             _pi.append(pi)
             _turn.append(board.whose_turn())
 
@@ -288,7 +277,7 @@ class MariZero(object):
     def next_move(self, board):
         """ interface responsible for answering game.py module
         """
-        S = self.read_state(board)
+        S = read_state(board)
         # TODO
 
 
