@@ -80,12 +80,14 @@ class TT(object):
             self.root = Node(None, 1.)
 
 
-    def policy_pi(self, board, num_search=N_SEARCH):
-        """ get policy pi as defined in the zero paper
+    def fn_pi(self, board, num_search=N_SEARCH):
+        """ board -> pi(a|s) look-up table
+        get policy pi as defined in the zero paper
         pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)
         tau: temperature controling the degree of exploration 
         simply the normalized visit count when tau=1.
         the smaller tau, the more relying on the visit count.
+
         """
         for _ in range(num_search):
             self.search(deepcopy(board))
@@ -96,15 +98,4 @@ class TT(object):
                for move, node in self.root.next.items() ]
         return dict(pi)
 
-    def fn_action_P(self, board, num_search=N_SEARCH):
-        """ board -> (a, P(s, -))
-        the interface fn usually called outside.
-        exploration using Dirichlet noise was not applied unlike the Zero.
-        """
-        pi = self.policy_pi(board, num_search)
-        moves, probs = zip(*pi.items())
-        move = np.random.choice(moves, 1, p=probs)
-        P = np.zeros(N*N)
-        P[moves] = probs
-        return move, P
 

@@ -96,6 +96,8 @@ class MariZero(object):
 
     """
     def __init__(self, game=None):
+        """ self.pi -> an instance of policy pi class, TT
+        """
         self.game = game
         self.init_model()
         self.pi = TT(self.model, self.fn_policy_value)
@@ -211,17 +213,31 @@ class MariZero(object):
         S = self.read_state(board)
         # TODO
 
+    def sample_from_pi(self, pi):
+        """ pi(-|s) -> (best_move, pi(s) as 1-d vector)
+        exploration using Dirichlet noise was not applied unlike the Zero.
+        literally sampling, but it depends on the temperature, tau
+        when pi is calculated. converged to the best move as tau -> 0
+        """
+        moves, probs = zip(*pi.items())
+        move = np.random.choice(moves, 1, p=probs)
+        pi_s = np.zeros(N*N)
+        pi_s[moves] = probs
+        return move, pi_s
+
     def self_play(self):
         """
-        generating self-play data: [ (state S, P(s,-), z), ]
+        generating self-play data: [ (state S, pi(s), z), ]
+        PI := pi(s) in forms of 1-d vector  
         """
         board = Board()
-        Ss, Ps, turns = [], [], []
+        Ss, PIs, turns = [], [], []
         self.pi.reset_tree()
         while True:
-            move, P = self.pi.fn_action_P(board)
+            pi = self.pi.fn_pi(board)
+            move, PI = self.sample_from_pi(pi)
             Ss.append(self.read_state(board))
-            Ps.append(P)
+            PIs.append(PI)
             turns.append(board.whose_turn())
 
             board.make_move(xy(move))
@@ -233,7 +249,7 @@ class MariZero(object):
             zs = np.zeros(len(turns))
             zs[turns == winner] = 1
             zs[turns != winner] = -1
-            return zip(Ss, Ps, zs)
+            return zip(Ss, PIs, zs)
         
 
     def train(self):
