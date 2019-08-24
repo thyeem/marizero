@@ -31,7 +31,7 @@ class Node(object):
         return self.Q + self.u
 
 
-class PolicyPi(object):
+class TT(object):
     """
     To decide the next move -> to find a =~ pi
     pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)

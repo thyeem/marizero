@@ -6,7 +6,7 @@ import numpy as np
 import os.path
 from collections import deque
 from board import Board
-from mcts import PolicyPi
+from mcts import TT
 from const import Stone, N
 
 CI = 10
@@ -98,26 +98,38 @@ class MariZero(object):
     def __init__(self, game=None):
         self.game = game
         self.init_model()
-        self.testPi = PolicyPi(self.testNet, self.fn_policy_value)
-        self.mainPi = PolicyPi(self.mainNet, self.fn_policy_value)
+        self.pi = TT(self.model, self.fn_policy_value)
         self.data = deque(maxlen=SIZE_DATA)
-        self.optim = optim.Adam(self.testNet.parameters(), 
-                                weight_decay=L2_CONST, lr=LEARNING_RATE)
-
-    def save_model(self, name):
-        torch.save(self.testNet.state_dict(), f'./model/{name}.pt')
-
-    def load_model(self, name):
-        model = Net()
-        model.load_state_dict(torch.load(f'./model/{name}.pt'))
-        model.eval()
-        return model
 
     def init_model(self):
-        self.testNet = os.path.isfile('./model/test_model.pt') and \
-                       self.load_model('test_model') or Net()
-        self.mainNet = os.path.isfile('./model/main_model.pt') and \
-                       self.load_model('main_model') or Net()
+        file = self.path_best_model_file()
+        self.model = self.load_model(file) 
+        self.init_optim()
+
+    def load_model(self, file=''):
+        model = Net()
+        if not os.path.isfile(file): return model
+        model.load_state_dict(torch.load(file))
+        model.eval()
+        return model
+    
+    def save_model(self, file):
+        torch.save(self.model.state_dict(), file)
+
+    def update_model(self, overturn=False): 
+        file = self.path_best_model_file()
+        if not overturn: 
+            self.model = self.load_model(file)
+            self.init_optim()
+        else:
+            self.save_model(file)
+
+    def init_optim(self):
+        self.optim = optim.Adam(self.model.parameters(), 
+                                weight_decay=L2_CONST, lr=LEARNING_RATE)
+
+    def path_best_model_file(self):
+        return f'./model/best_model.pt'
 
     def read_state(self, board):
         """ board -> S
@@ -163,7 +175,7 @@ class MariZero(object):
         p := P(s,-), where P(s,a) := Pr(a|s)
         """
         batch_S = torch.tensor(states)
-        batch_logP, batch_v = self.testNet(batch_S)
+        batch_logP, batch_v = self.model(batch_S)
         batch_P = np.exp(batch_logP.data.numpy())
         batch_v = batch_v.data.numpy()
         return batch_P, batch_v
@@ -205,15 +217,15 @@ class MariZero(object):
         """
         board = Board()
         Ss, Ps, turns = [], [], []
-        self.testPi.reset_tree()
+        self.pi.reset_tree()
         while True:
-            move, P = self.testPi.fn_action_P(board)
+            move, P = self.pi.fn_action_P(board)
             Ss.append(self.read_state(board))
             Ps.append(P)
             turns.append(board.whose_turn())
 
             board.make_move(xy(move))
-            self.testPi.update_root(move)
+            self.pi.update_root(move)
 
             winner = board.check_game_end()
             if not winner: continue
@@ -228,7 +240,7 @@ class MariZero(object):
         """
         loss := (z-v)^2 - pi'log(p) + c||theta||
         """
-        self.testNet.train()
+        self.model.train()
         while True:
             for _ in range(N_EPISODE):
                 self.data.extend(self.self_play())
