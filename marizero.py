@@ -39,10 +39,10 @@ class Net(nn.Module):
         self.bn3 = nn.BatchNorm2d(H2)
         self.conv4 = nn.Conv2d(H2, H4, (3,3,), 1, 1)
         self.bn4 = nn.BatchNorm2d(H4)
-##         self.conv5 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
-##         self.bn5 = nn.BatchNorm2d(H4)
-##         self.conv6 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
-##         self.bn6 = nn.BatchNorm2d(H4)
+        # self.conv5 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
+        # self.bn5 = nn.BatchNorm2d(H4)
+        # self.conv6 = nn.Conv2d(H4, H4, (3,3,), 1, 1)
+        # self.bn6 = nn.BatchNorm2d(H4)
 
         self.p_conv = nn.Conv2d(H4, 2, (1,1,), 1, 0)
         self.p_bn = nn.BatchNorm2d(2)
@@ -63,10 +63,10 @@ class Net(nn.Module):
         x = F.relu(self.bn3(x))
         x = self.conv4(x)
         x = F.relu(self.bn4(x))
-##         x = self.conv5(x)
-##         x = F.relu(self.bn5(x))
-##         x = self.conv6(x)
-##         x = F.relu(self.bn6(x))
+        # x = self.conv5(x)
+        # x = F.relu(self.bn5(x))
+        # x = self.conv6(x)
+        # x = F.relu(self.bn6(x))
 
         p_x = self.p_conv(x)
         p_x = F.relu(self.p_bn(p_x))
@@ -199,64 +199,64 @@ class MariZero(object):
         Augments data set by flipping and rotating
         by definition x8 num of data can be produced.
         """
-        for S, PI, z in data:
-            R = [ np.rot90(S, i) for i in range(4) ] 
-            F = [ np.fliplr(r) for r in R ]
-            e_S = R + F
-            pi = PI.reshape(N,N)
-            R = [ np.rot90(pi, i) for i in range(4) ] 
-            F = [ np.fliplr(r) for r in R ]
-            e_pi = R + F
-            e_z = [z] * len(e_S)
-            self.data.extend(zip(e_S, e_pi, e_z))
+        for S, pi, z in data:
+            _R = [ np.rot90(S, i) for i in range(4) ] 
+            _F = [ np.fliplr(r) for r in _R ]
+            _S = _R + _F
+            pi.shape = (N,N)
+            _R = [ np.rot90(pi, i) for i in range(4) ] 
+            _F = [ np.fliplr(r) for r in _R ]
+            _pi = _R + _F
+            _z = [z] * len(_S)
+            self.data.extend(zip(_S, _pi, _z))
 
     def sample_from_pi(self, pi):
-        """ pi(-|s) -> (best_move, PI)
-        PI := pi(s) in forms of 1-d vector (for training) 
+        """ pi(-|s) -> (best_move, _pi)
+        _pi := 1-d vector of pi(s) for training. be aware of _pi != pi(-|s).
         exploration using Dirichlet noise was not applied unlike the Zero.
         Literally sampling, but it depends on the temperature, tau
         when pi is calculated. Converged to the best move as tau -> 0
         """
         moves, probs = zip(*pi.items())
         move = np.random.choice(moves, 1, p=probs)
-        PI = np.zeros(N*N)
-        PI[moves] = probs
-        return move, PI
+        _pi = np.zeros(N*N)
+        _pi[moves] = probs
+        return move, _pi 
 
     def self_play(self):
-        """ None -> [ (state S, PI, z), ]
+        """ None -> [ (state S, pi, z), ]
         generates self-play data for training the model
         """
         board = Board()
-        Ss, PIs, turns = [], [], []
+        _S, _pi, _turn = [], [], []
         self.pi.reset_tree()
         while True:
             pi = self.pi.fn_pi(board)
-            move, PI = self.sample_from_pi(pi)
-            Ss.append(self.read_state(board))
-            PIs.append(PI)
-            turns.append(board.whose_turn())
+            move, pi = self.sample_from_pi(pi)
+            _S.append(self.read_state(board))
+            _pi.append(pi)
+            _turn.append(board.whose_turn())
 
             board.make_move(xy(move))
             self.pi.update_root(move)
 
             winner = board.check_game_end()
             if not winner: continue
-            turns = np.array(turns)
-            zs = np.zeros(len(turns))
-            zs[turns == winner] = 1
-            zs[turns != winner] = -1
-            return zip(Ss, PIs, zs)
+            _turn = np.array(_turn)
+            _z = np.zeros(len(_turn))
+            _z[_turn == winner] = 1
+            _z[_turn != winner] = -1
+            return zip(_S, _pi, _z)
         
     def train(self):
         """
         loss := (z-v)^2 - pi'log(p) + c||theta||^2
-        batch from self.data := [ (S, PI, z), ]
+        batch from self.data := [ (S, pi, z), ]
         S -> input 
         z -> reward, target of value network
         v -> output of value network
         cross entropy of pi(a|s) and P(s,a)
-        pi -> pi(-|s), PI := 1-d vector form of pi(-|s)
+        pi -> 1-d vector of pi(-|s)
         log(p) -> output of policy p network
         L2 regularization was considered as L2 penalty in optim
         """
@@ -283,7 +283,6 @@ class MariZero(object):
             self.update_model(overturn)
 
     def evaluate_model(self): 
-
         pass
 
     def next_move(self, board):
