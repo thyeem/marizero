@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import os.path
+import random
 import policy
 from collections import deque
 from board import Board
@@ -17,7 +18,7 @@ LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
 N_EPISODE = 1
-N_EPOCH = 3
+N_EPOCH = 10
 SIZE_DATA = 10000
 SIZE_BATCH = 3
 RATIO_OVERTURN = 0.55
@@ -201,7 +202,7 @@ class MariZero(object):
         when pi is calculated. Converged to the best move as tau -> 0
         """
         moves, probs = zip(*pi.items())
-        move = np.random.choice(moves, 1, p=probs)
+        move = np.random.choice(moves, 1, p=probs).item()
         _pi = np.zeros(N*N)
         _pi[list(moves)] = probs
         return move, _pi 
@@ -222,7 +223,6 @@ class MariZero(object):
 
             board.make_move(*xy(move))
             self.pi.update_root(move)
-
             winner = board.check_game_end()
             if not winner: continue
             _turn = np.array(_turn)
@@ -246,12 +246,17 @@ class MariZero(object):
         self.model.train()
         while True:
             for _ in range(N_EPISODE):
+                print('== get started a self-play game')
                 data = self.self_play()
-                self.augment_data(data)
+                self.data.extend(data)
+##                 self.augment_data(data)
 
             if len(self.data) < SIZE_BATCH: continue
-            batch = np.random.choice(self.data, SIZE_BATCH)
-            S, pi, z = ( torch.FloatTensor(x) for x in zip(*batch) )
+            batch = random.sample(self.data, SIZE_BATCH)
+            S, pi, z = zip(*batch)
+            S = torch.cat([ torch.FloatTensor(x) for x in S ], dim=0)
+            pi = torch.stack([ torch.FloatTensor(x) for x in pi ])
+            z = torch.cat([ torch.FloatTensor([x]) for x in z ], dim=0)
 
             for i in range(1, N_EPOCH+1):
                 self.optim.zero_grad()
