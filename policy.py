@@ -1,11 +1,12 @@
 import math
 import numpy as np
+import torch
 from copy import deepcopy
 from const import N
 import marizero as mario
 
 C_PUCT = math.sqrt(2)
-N_SEARCH = 1600
+N_SEARCH = 50
 
 class Node(object):
     """ definition of node used in Monte-Carlo search for policy pi
@@ -31,6 +32,11 @@ class Node(object):
         self.u = C_PUCT * self.P * math.sqrt(self.prev.N) / (1 + self.N)
         return self.Q + self.u
 
+
+def valid_move_mask(S): 
+    """ returns a flattened array of valid move mask-layer
+    """
+    return S[:,3,:,:].flatten().data.numpy()
 
 def xy(move): return move // N, move % N
 
@@ -66,12 +72,13 @@ class TT(object):
         while True:
             if node.is_leaf(): return node
             move, node = max(node.next.items(), key=lambda x: x[1].Q_plus_u())
-            assert board.is_illegal_move(xy(move)) == 0
-            board.make_move(xy(move))
+            assert board.is_illegal_move(*xy(move)) == 0
+            board.make_move(*xy(move))
 
     def expand(self, node, P):
-        for move, prob in P:
-            node.next[move] = Node(self, prob)
+        for move in range(len(P)):
+            if P[move] <= 0: continue
+            node.next[move] = Node(node, P[move])
 
     def backup(self, node, v):
         node.N += 1
@@ -99,6 +106,7 @@ class TT(object):
         used when expanding tree and illegal moves are filtered here.
         """
         S = mario.read_state(board)
+        S = torch.FloatTensor(S)
         logP, v = self.net(S)
         logP += 1e-10
         P = np.exp(logP.flatten().data.numpy()) * valid_move_mask(S)
@@ -118,7 +126,6 @@ class TT(object):
         """
         for _ in range(num_search):
             self.search(deepcopy(board))
-        
         tau = board.moves < 8 and 1 or 1e-3
         sumN = sum( node.N ** (1/tau) for _, node in self.root.next.items() )
         pi = [ ( move, node.N ** (1/tau) / sumN, ) 

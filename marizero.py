@@ -19,9 +19,8 @@ GAMMA = 0.99
 N_EPISODE = 1
 N_EPOCH = 3
 SIZE_DATA = 10000
-SIZE_BATCH = 512
+SIZE_BATCH = 3
 RATIO_OVERTURN = 0.55
-
 
 class Net(nn.Module):
     """ network for both policy p and value function 
@@ -80,14 +79,9 @@ class Net(nn.Module):
         v_x = self.v_fc1(v_x)
         v_x = F.relu(v_x)
         v_x = self.v_fc2(v_x)
-        v_x = F.tanh(v_x)
+        v_x = torch.tanh(v_x)
         return p_x, v_x
 
-
-def valid_move_mask(S): 
-    """ returns a flattened array of valid move mask-layer
-    """
-    return S[:,3,:,:].flatten().data.numpy()
 
 def xy(move): return move // N, move % N
 
@@ -102,7 +96,7 @@ def read_state(board):
     4-6 -> enemy's stones captured (one-hot)
     7-9 -> my stones captured (one-hot)
     """
-    S = np.zeros(1, CI, N, N)
+    S = np.zeros([1, CI, N, N])
     S[:,0,:,:] = board.turn
     for x in range(N):
         for y in range(N):
@@ -209,7 +203,7 @@ class MariZero(object):
         moves, probs = zip(*pi.items())
         move = np.random.choice(moves, 1, p=probs)
         _pi = np.zeros(N*N)
-        _pi[moves] = probs
+        _pi[list(moves)] = probs
         return move, _pi 
 
     def self_play(self):
@@ -226,7 +220,7 @@ class MariZero(object):
             _pi.append(pi)
             _turn.append(board.whose_turn())
 
-            board.make_move(xy(move))
+            board.make_move(*xy(move))
             self.pi.update_root(move)
 
             winner = board.check_game_end()
@@ -283,4 +277,5 @@ class MariZero(object):
 
 if __name__ == '__main__':
     mario = MariZero()
+    mario.train()
 
