@@ -6,7 +6,7 @@ from const import N
 import marizero as mario
 
 C_PUCT = math.sqrt(2)
-N_SEARCH = 5
+N_SEARCH = 20
 
 class Node(object):
     """ definition of node used in Monte-Carlo search for policy pi
@@ -80,9 +80,9 @@ class TT(object):
             board.make_move(*xy(move))
 
     def expand(self, node, P):
-        for move in range(len(P)):
-            if P[move] <= 0: continue
-            node.next[move] = Node(node, P[move])
+        for move, prob in P.items():
+            if prob <= 0: continue
+            node.next[move] = Node(node, prob)
 
     def backup(self, node, v):
         node.N += 1
@@ -98,11 +98,11 @@ class TT(object):
         if winner:
             v = winner == board.whose_turn() and 1. or -1.
         else:
-            P, v = self.fn_policy_value(board)
+            P, v = self.fn_policy_value(board, 10)
             self.expand(leaf, P)
         self.backup(leaf, -v)
 
-    def fn_policy_value(self, board):
+    def fn_policy_value(self, board, cut=None):
         """ board -> ( P(s,-), v )
         (p,v) = f_theta(s)
         get policy p and value fn v from network feed-forward.
@@ -117,6 +117,10 @@ class TT(object):
         Psum = P.sum()
         assert Psum != 0
         P /= Psum
+        moves = cut and sorted(range(len(P)), key=lambda x: P[x])[-cut:] \
+                     or range(len(P))
+        P = cut and [ P[move] for move in moves ] or P
+        P = dict(zip(moves, P))
         return P, v
 
     def fn_pi(self, board, num_search=N_SEARCH):

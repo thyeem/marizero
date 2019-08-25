@@ -17,7 +17,7 @@ H4 = 128
 LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
-N_EPISODE = 1
+N_EPISODE = 3
 N_EPOCH = 10
 SIZE_DATA = 10000
 SIZE_BATCH = 3
@@ -245,8 +245,8 @@ class MariZero(object):
         """
         self.model.train()
         while True:
-            for _ in range(N_EPISODE):
-                print('== get started a self-play game')
+            for i in range(1,N_EPISODE+1):
+                print(f'episode {i:03d}  self-play')
                 data = self.self_play()
                 self.data.extend(data)
 ##                 self.augment_data(data)
@@ -258,7 +258,7 @@ class MariZero(object):
             pi = torch.stack([ torch.FloatTensor(x) for x in pi ])
             z = torch.cat([ torch.FloatTensor([x]) for x in z ], dim=0)
 
-            for i in range(1, N_EPOCH+1):
+            for i in range(1,N_EPOCH+1):
                 self.optim.zero_grad()
                 logP, v = self.model(S)
                 loss_v = F.mse_loss(v.view(-1), z)
