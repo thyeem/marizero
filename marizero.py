@@ -17,8 +17,8 @@ H4 = 128
 LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
-N_EPISODE = 3
-N_EPOCH = 10
+N_EPISODE = 1
+N_EPOCH = 5
 SIZE_DATA = 10000
 SIZE_BATCH = 3
 RATIO_OVERTURN = 0.55
@@ -90,23 +90,23 @@ def read_state(board):
     """ board -> S
     Defines the input layer S: read the current state from the board given.
     return state S as a tensor of 10 channels
-    0 -> color turn to play 
+    0 -> turn to play 
     1 -> BLACK stones
     2 -> WHITE stones
-    3 -> EMPTY spaces of legal-move 
+    3 -> last move
     4-6 -> enemy's stones captured (one-hot)
     7-9 -> my stones captured (one-hot)
     """
     S = np.zeros([1, CI, N, N])
     S[:,0,:,:] = board.turn
+    x, y = board.get_last_move()
+    S[:,3,x,y] = 1
     for x in range(N):
         for y in range(N):
             if board.get_stone(x, y) == Stone.BLACK:
                 S[:,1,x,y] = 1
             elif board.get_stone(x, y) == Stone.WHITE:
                 S[:,2,x,y] = 1
-            else:
-                if not board.is_illegal_move(x, y): S[:,3,x,y] = 1
 
     if board.turn == Stone.BLACK:
         (cap_self, cap_enemy) = (board.scoreB, board.scoreW)
@@ -165,6 +165,7 @@ class MariZero(object):
 
     def update_model(self, overturn=False): 
         file = self.path_best_model_file()
+        if not file: overturn = True
         if overturn: 
             self.save_model(file)
         else:
@@ -271,13 +272,14 @@ class MariZero(object):
             self.update_model(overturn)
 
     def evaluate_model(self): 
-        pass
+        return True
 
     def next_move(self, board):
         """ interface responsible for answering game.py module
         """
-        S = read_state(board)
-        # TODO
+        pi = self.pi.fn_pi(board)
+        move, pi = self.sample_from_pi(pi)
+        return xy(move)
 
 
 if __name__ == '__main__':

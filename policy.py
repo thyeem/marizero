@@ -33,11 +33,6 @@ class Node(object):
         return self.Q + self.u
 
 
-def valid_move_mask(S): 
-    """ returns a flattened array of valid move mask-layer
-    """
-    return S[:,3,:,:].flatten().data.numpy()
-
 def xy(move): return move // N, move % N
 
 def softmax(x):
@@ -80,9 +75,9 @@ class TT(object):
             board.make_move(*xy(move))
 
     def expand(self, node, P):
-        for move, prob in P.items():
-            if prob <= 0: continue
-            node.next[move] = Node(node, prob)
+        for move in range(len(P)):
+            if P[move] < 1e-10: continue
+            node.next[move] = Node(node, P[move])
 
     def backup(self, node, v):
         node.N += 1
@@ -98,29 +93,26 @@ class TT(object):
         if winner:
             v = winner == board.whose_turn() and 1. or -1.
         else:
-            P, v = self.fn_policy_value(board, 10)
+            P, v = self.fn_policy_value(board)
             self.expand(leaf, P)
         self.backup(leaf, -v)
 
-    def fn_policy_value(self, board, cut=None):
+    def fn_policy_value(self, board):
         """ board -> ( P(s,-), v )
         (p,v) = f_theta(s)
         get policy p and value fn v from network feed-forward.
         p := P(s,-), where P(s,a) = Pr(a|s)
-        used when expanding tree and illegal moves are filtered here.
         """
         S = mario.read_state(board)
         S = torch.FloatTensor(S)
         logP, v = self.net(S)
         logP += 1e-10
-        P = np.exp(logP.flatten().data.numpy()) * valid_move_mask(S)
+        P = np.exp(logP.flatten().data.numpy())
         Psum = P.sum()
         assert Psum != 0
         P /= Psum
-        moves = cut and sorted(range(len(P)), key=lambda x: P[x])[-cut:] \
-                     or range(len(P))
-        P = cut and [ P[move] for move in moves ] or P
-        P = dict(zip(moves, P))
+        P = [ -1 if board.is_illegal_move(*xy(move)) else P[move] 
+              for move in range(len(P)) ] 
         return P, v
 
     def fn_pi(self, board, num_search=N_SEARCH):
