@@ -186,14 +186,14 @@ class MariZero(object):
         by definition x8 num of data can be produced.
         """
         for S, pi, z in data:
-            _R = [ np.rot90(S, i) for i in range(4) ] 
-            _F = [ np.fliplr(r) for r in _R ]
+            _R = [ np.rot90(S, i, axes=(2,3)).copy() for i in range(4) ] 
+            _F = [ np.fliplr(r).copy() for r in _R ]
             _S = _R + _F
-            pi.shape = (N,N)
-            _R = [ np.rot90(pi, i) for i in range(4) ] 
-            _F = [ np.fliplr(r) for r in _R ]
-            _pi = _R + _F
-            _z = [z] * len(_S)
+            pi = pi.reshape((N,N))
+            _R = [ np.rot90(pi, i, axes=(0,1)).copy() for i in range(4) ] 
+            _F = [ np.fliplr(r).copy() for r in _R ]
+            _pi =[ x.flatten() for x in _R + _F ]
+            _z = np.repeat(z, len(_S))
             self.data.extend(zip(_S, _pi, _z))
 
     def sample_from_pi(self, pi):
@@ -252,10 +252,9 @@ class MariZero(object):
             for i in range(1,N_EPISODE+1):
                 print(f'episode {i:03d}  self-play', end='\t', flush=True)
                 data = self.self_play()
-                self.data.extend(data)
-                # self.augment_data(data)
+                # self.data.extend(data)
+                self.augment_data(data)
                 print(f'done')
-
 
             print(f'data size  {len(self.data)}')
             if len(self.data) < SIZE_BATCH: continue

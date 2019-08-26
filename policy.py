@@ -6,7 +6,7 @@ from const import N
 import marizero as mario
 
 C_PUCT = math.sqrt(2)
-N_SEARCH = 20
+N_SEARCH = 2
 
 class Node(object):
     """ definition of node used in Monte-Carlo search for policy pi
