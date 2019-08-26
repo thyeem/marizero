@@ -20,7 +20,7 @@ GAMMA = 0.99
 N_EPISODE = 1
 N_EPOCH = 5
 SIZE_DATA = 10000
-SIZE_BATCH = 3
+SIZE_BATCH = 512
 RATIO_OVERTURN = 0.55
 
 class Net(nn.Module):
@@ -86,8 +86,8 @@ class Net(nn.Module):
 
 def read_state(board):
     """ board -> S
-    Defines the input layer S: read the current state from the board given.
-    return state S as a tensor of 10 channels
+    Defines the input layer S: read the current state from 
+    the board given, then return state S of 10 channels
     0 -> turn to play 
     1 -> BLACK stones
     2 -> WHITE stones
@@ -124,6 +124,7 @@ def read_state(board):
 
 def xy(move): return move // N, move % N
 
+#---------------------------------------------------------------------
 
 class MariZero(object):
     """ MariZero is a BCF-AI without any human domain knowledge.
@@ -175,9 +176,9 @@ class MariZero(object):
     def init_optim(self):
         self.optim = optim.Adam(self.model.parameters(), 
                                 weight_decay=L2_CONST, lr=LEARNING_RATE)
-
+    
     def path_best_model_file(self):
-        return f'./model/best_model.pt'
+        return f'./data/best_model.pt'
 
     def augment_data(self, data):
         """ data augmentation using the symmetry of game board.
@@ -196,17 +197,19 @@ class MariZero(object):
             self.data.extend(zip(_S, _pi, _z))
 
     def sample_from_pi(self, pi):
-        """ pi(-|s) -> (best_move, _pi)
-        _pi := 1-d vector of pi(s) for training. be aware of _pi != pi(-|s).
-        exploration using Dirichlet noise was not applied unlike the Zero.
+        """ pi := ([move], [prob]) -> (best_move, pi_)
+        for convenience, pi(-|s) has this two-cols form.
+        pi_ := 1-d vector of pi(s) for training. 
+        be aware of pi_ != pi(-|s).
+        exploration using Dirichlet noise was not applied.
         Literally sampling, but it depends on the temperature, tau
         when pi is calculated. Converged to the best move as tau -> 0
         """
-        moves, probs = zip(*pi.items())
+        moves, probs = pi
         move = np.random.choice(moves, 1, p=probs).item()
-        _pi = np.zeros(N*N)
-        _pi[list(moves)] = probs
-        return move, _pi 
+        pi_ = np.zeros(N*N)
+        pi_[list(moves)] = probs
+        return move, pi_ 
 
     def self_play(self):
         """ None -> [ (state S, pi, z), ]
@@ -217,13 +220,13 @@ class MariZero(object):
         self.pi.reset_tree()
         while True:
             pi = self.pi.fn_pi(board)
-            move, pi = self.sample_from_pi(pi)
+            move, pi_ = self.sample_from_pi(pi)
+            self.pi.update_root(move)
             _S.append(read_state(board))
-            _pi.append(pi)
+            _pi.append(pi_)
             _turn.append(board.whose_turn())
 
             board.make_move(*xy(move), True)
-            self.pi.update_root(move)
             winner = board.check_game_end()
             if not winner: continue
             _turn = np.array(_turn)
@@ -250,9 +253,11 @@ class MariZero(object):
                 print(f'episode {i:03d}  self-play', end='\t', flush=True)
                 data = self.self_play()
                 self.data.extend(data)
-##                 self.augment_data(data)
+                # self.augment_data(data)
                 print(f'done')
 
+
+            print(f'data size  {len(self.data)}')
             if len(self.data) < SIZE_BATCH: continue
             batch = random.sample(self.data, SIZE_BATCH)
             S, pi, z = zip(*batch)
@@ -279,7 +284,7 @@ class MariZero(object):
         """ interface responsible for answering game.py module
         """
         self.pi.reset_tree()
-        pi = self.pi.fn_pi(board)
+        pi = self.pi.fn_pi(board, 400)
         move, pi = self.sample_from_pi(pi)
         return xy(move)
 

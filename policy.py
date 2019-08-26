@@ -92,7 +92,6 @@ class TT(object):
         leaf = self.select(board)
         winner = board.check_game_end()
         if winner:
-            # v = winner == board.whose_turn() and 1. or -1.
             v = -1.
         else:
             P, v = self.fn_policy_value(board)
@@ -100,7 +99,7 @@ class TT(object):
         self.backup(leaf, -v)
 
     def fn_pi(self, board, num_search=N_SEARCH):
-        """ board -> pi(a|s) look-up table
+        """ board -> ( [move], [prob] ) as two-cols form of pi(a|s) 
         get policy pi as defined in the zero paper
         pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)
         tau: temperature controling the degree of exploration 
@@ -113,8 +112,8 @@ class TT(object):
         tau = board.moves < 8 and 1 or 1e-3
         moves, visits = zip(*[ (move, node.N) 
                                for move, node in self.root.next.items() ])
-        visits = softmax(1./tau * np.log(np.array(visits)+1) + 1e-10)
-        return dict(zip(moves, visits))
+        probs = softmax(1./tau * np.log(np.array(visits)+1) + 1e-10)
+        return (moves, probs)
 
     def fn_policy_value(self, board):
         """ board -> ( P(s,-), v )
@@ -127,9 +126,7 @@ class TT(object):
         logP, v = self.net(S)
         logP += 1e-10
         P = np.exp(logP.flatten().data.numpy())
-        Psum = P.sum()
-        assert Psum != 0
-        P /= Psum
+        P /= P.sum()
         invalid = [ move for move in range(len(P)) 
                     if board.is_illegal_move(*xy(move)) ] 
         P[invalid] = -1
