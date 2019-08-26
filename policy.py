@@ -33,12 +33,13 @@ class Node(object):
         return self.Q + self.u
 
 
-def xy(move): return move // N, move % N
-
 def softmax(x):
     p = np.exp(x-np.max(x))
     p /= p.sum(axis=0)
     return p
+
+def xy(move): return move // N, move % N
+
 
 class TT(object):
     """
@@ -72,7 +73,7 @@ class TT(object):
             if node.is_leaf(): return node
             move, node = max(node.next.items(), key=lambda x: x[1].Q_plus_u())
             assert board.is_illegal_move(*xy(move)) == 0
-            board.make_move(*xy(move))
+            board.make_move(*xy(move), True)
 
     def expand(self, node, P):
         for move in range(len(P)):
@@ -91,29 +92,12 @@ class TT(object):
         leaf = self.select(board)
         winner = board.check_game_end()
         if winner:
-            v = winner == board.whose_turn() and 1. or -1.
+            # v = winner == board.whose_turn() and 1. or -1.
+            v = -1.
         else:
             P, v = self.fn_policy_value(board)
             self.expand(leaf, P)
         self.backup(leaf, -v)
-
-    def fn_policy_value(self, board):
-        """ board -> ( P(s,-), v )
-        (p,v) = f_theta(s)
-        get policy p and value fn v from network feed-forward.
-        p := P(s,-), where P(s,a) = Pr(a|s)
-        """
-        S = mario.read_state(board)
-        S = torch.FloatTensor(S)
-        logP, v = self.net(S)
-        logP += 1e-10
-        P = np.exp(logP.flatten().data.numpy())
-        Psum = P.sum()
-        assert Psum != 0
-        P /= Psum
-        P = [ -1 if board.is_illegal_move(*xy(move)) else P[move] 
-              for move in range(len(P)) ] 
-        return P, v
 
     def fn_pi(self, board, num_search=N_SEARCH):
         """ board -> pi(a|s) look-up table
@@ -131,5 +115,25 @@ class TT(object):
                                for move, node in self.root.next.items() ])
         visits = softmax(1./tau * np.log(np.array(visits)+1) + 1e-10)
         return dict(zip(moves, visits))
+
+    def fn_policy_value(self, board):
+        """ board -> ( P(s,-), v )
+        (p,v) = f_theta(s)
+        get policy p and value fn v from network feed-forward.
+        p := P(s,-), where P(s,a) = Pr(a|s)
+        """
+        S = mario.read_state(board)
+        S = torch.FloatTensor(S)
+        logP, v = self.net(S)
+        logP += 1e-10
+        P = np.exp(logP.flatten().data.numpy())
+        Psum = P.sum()
+        assert Psum != 0
+        P /= Psum
+        invalid = [ move for move in range(len(P)) 
+                    if board.is_illegal_move(*xy(move)) ] 
+        P[invalid] = -1
+        return P, v
+
 
 

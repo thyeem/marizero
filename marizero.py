@@ -84,8 +84,6 @@ class Net(nn.Module):
         return p_x, v_x
 
 
-def xy(move): return move // N, move % N
-
 def read_state(board):
     """ board -> S
     Defines the input layer S: read the current state from the board given.
@@ -123,6 +121,8 @@ def read_state(board):
         S[:,8,:,:] = b1
         S[:,9,:,:] = b0
     return S
+
+def xy(move): return move // N, move % N
 
 
 class MariZero(object):
@@ -222,7 +222,7 @@ class MariZero(object):
             _pi.append(pi)
             _turn.append(board.whose_turn())
 
-            board.make_move(*xy(move))
+            board.make_move(*xy(move), True)
             self.pi.update_root(move)
             winner = board.check_game_end()
             if not winner: continue
@@ -247,10 +247,11 @@ class MariZero(object):
         self.model.train()
         while True:
             for i in range(1,N_EPISODE+1):
-                print(f'episode {i:03d}  self-play')
+                print(f'episode {i:03d}  self-play', end='\t', flush=True)
                 data = self.self_play()
                 self.data.extend(data)
 ##                 self.augment_data(data)
+                print(f'done')
 
             if len(self.data) < SIZE_BATCH: continue
             batch = random.sample(self.data, SIZE_BATCH)
@@ -277,6 +278,7 @@ class MariZero(object):
     def next_move(self, board):
         """ interface responsible for answering game.py module
         """
+        self.pi.reset_tree()
         pi = self.pi.fn_pi(board)
         move, pi = self.sample_from_pi(pi)
         return xy(move)

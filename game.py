@@ -36,7 +36,7 @@ class Game(object):
         self.screen.init_play_screen(self)
         sofia = SofiAI(self)
         maria = MariAI(self)
-        mario = MariZero()
+        mario = MariZero(self)
 
         while True:
             if self.winner: break
