@@ -32,6 +32,21 @@ class Node(object):
         self.u = C_PUCT * self.P * math.sqrt(self.prev.N) / (1 + self.N)
         return self.Q + self.u
 
+    def print_tree(self, node, move=-1, indent=2, cutoff=None):
+        """ recursively dumps node-tree
+        usage: node.print_tree(node, cutoff=5)
+        """
+        x, y = move > -1 and (move//N, move%N) or (-1,-1)
+        print(f'{" "*indent} ({x:2d},{y:2d})  '
+              f'N {node.N:6d}  Q {node.Q:6.4f}  '
+              f'u {node.u:6.4f}  P {node.P:6.4f}')
+        if not node.is_leaf():
+            children = sorted(node.next.items(), 
+                              key=lambda x: x[1].N, reverse=True)
+            children = cutoff and children[:cutoff] or children
+            for move, child in children:
+                self.print_tree(child, move, indent+2)
+
 
 def softmax(x):
     p = np.exp(x-np.max(x))
