@@ -260,10 +260,12 @@ class MariZero(object):
               f'self-play', end='\t', flush=True)
         while True:
             pi = self.pi.fn_pi(board)
-            # self.pi.root.print_tree(self.pi.root, cutoff=5)
-            # sys.exit()
             move, pi_ = self.sample_from_pi(pi)
+
             self.pi.update_root(move)
+            print()
+            self.pi.root.print_tree(self.pi.root, cutoff=5)
+            sys.exit()
             _S.append(read_state(board))
             _pi.append(pi_)
             _turn.append(board.whose_turn())
@@ -323,11 +325,16 @@ class MariZero(object):
     def next_move(self, board):
         """ interface responsible for answering game.py module
         """
-        if board.moves > 0:
-            x, y = board.get_last_move()
-            self.pi.update_root(x*N+y)
-        pi = self.pi.fn_pi(board, 100)
+        # TODO fix illegal move bug
+##         if board.moves > 0:
+##             x, y = board.get_last_move()
+##             self.pi.update_root(x*N+y)
+        self.pi.reset_tree()
+        pi = self.pi.fn_pi(board, 1600)
         move, _ = self.sample_from_pi(pi)
+
+        self.pi.root.print_tree(self.pi.root, cutoff=5)
+
         return xy(move)
 
 

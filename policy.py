@@ -5,7 +5,7 @@ from copy import deepcopy
 from const import N
 import marizero as mario
 
-C_PUCT = 10
+C_PUCT = 0.5
 N_SEARCH = 20
 
 class Node(object):
