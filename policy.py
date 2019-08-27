@@ -5,8 +5,8 @@ from copy import deepcopy
 from const import N
 import marizero as mario
 
-C_PUCT = math.sqrt(2)
-N_SEARCH = 2
+C_PUCT = 10
+N_SEARCH = 30
 
 class Node(object):
     """ definition of node used in Monte-Carlo search for policy pi
@@ -109,7 +109,7 @@ class TT(object):
         """
         for _ in range(num_search):
             self.search(deepcopy(board))
-        tau = board.moves < 8 and 1 or 1e-3
+        tau = board.moves < 5 and 1 or 1e-3
         moves, visits = zip(*[ (move, node.N) 
                                for move, node in self.root.next.items() ])
         probs = softmax(1./tau * np.log(np.array(visits)+1) + 1e-10)

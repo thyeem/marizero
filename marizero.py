@@ -19,8 +19,8 @@ L2_CONST = 1e-4
 GAMMA = 0.99
 N_EPISODE = 1
 N_EPOCH = 5
-SIZE_DATA = 10000
-SIZE_BATCH = 512
+SIZE_DATA = 50000
+SIZE_BATCH = 1024
 RATIO_OVERTURN = 0.55
 
 class Net(nn.Module):
@@ -185,16 +185,19 @@ class MariZero(object):
         Augments data set by flipping and rotating
         by definition x8 num of data can be produced.
         """
+        increment = 0
         for S, pi, z in data:
             _R = [ np.rot90(S, i, axes=(2,3)).copy() for i in range(4) ] 
-            _F = [ np.fliplr(r).copy() for r in _R ]
+            _F = [ np.flip(r, 3).copy() for r in _R ]
             _S = _R + _F
             pi = pi.reshape((N,N))
             _R = [ np.rot90(pi, i, axes=(0,1)).copy() for i in range(4) ] 
-            _F = [ np.fliplr(r).copy() for r in _R ]
+            _F = [ np.flip(r, 1).copy() for r in _R ]
             _pi =[ x.flatten() for x in _R + _F ]
             _z = np.repeat(z, len(_S))
             self.data.extend(zip(_S, _pi, _z))
+            increment += len(_S)
+        print(f'data added  {increment:4d}\ttotal {len(self.data):6d}')
 
     def sample_from_pi(self, pi):
         """ pi := ([move], [prob]) -> (best_move, pi_)
@@ -250,13 +253,10 @@ class MariZero(object):
         self.model.train()
         while True:
             for i in range(1,N_EPISODE+1):
-                print(f'episode {i:03d}  self-play', end='\t', flush=True)
+                print(f'episode {i:03d}  self-play')
                 data = self.self_play()
-                # self.data.extend(data)
                 self.augment_data(data)
-                print(f'done')
 
-            print(f'data size  {len(self.data)}')
             if len(self.data) < SIZE_BATCH: continue
             batch = random.sample(self.data, SIZE_BATCH)
             S, pi, z = zip(*batch)
@@ -282,9 +282,11 @@ class MariZero(object):
     def next_move(self, board):
         """ interface responsible for answering game.py module
         """
-        self.pi.reset_tree()
-        pi = self.pi.fn_pi(board, 400)
-        move, pi = self.sample_from_pi(pi)
+        if board.moves > 0:
+            x, y = board.get_last_move()
+            self.pi.update_root(x*N+y)
+        pi = self.pi.fn_pi(board, 100)
+        move, _ = self.sample_from_pi(pi)
         return xy(move)
 
 
