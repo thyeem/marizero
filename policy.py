@@ -8,52 +8,73 @@ import marizero as mario
 C_PUCT = 0.5
 N_SEARCH = 20
 
-class Node(object):
-    """ definition of node used in Monte-Carlo search for policy pi
-    """
-    def __init__(self, prev, P):
-        self.prev = prev
-        self.next = {}
-        self.N = 0
-        self.Q = 0
-        self.u = 0
-        self.P = P
-
-    def is_root(self):
-        return self.prev is None
-
-    def is_leaf(self):
-        return len(self.next) == 0
-
-    def Q_plus_u(self):
-        """ Upper-confidence bound on Q-value
-        update u(s,a) for this node and return U(s,a) := Q(s,a) + u(s,a)
-        """
-        self.u = C_PUCT * self.P * math.sqrt(self.prev.N) / (1 + self.N)
-        return self.Q + self.u
-
-    def print_tree(self, node, move=-1, indent=2, cutoff=None):
-        """ recursively dumps node-tree
-        usage: node.print_tree(node, cutoff=5)
-        """
-        x, y = move > -1 and (move//N, move%N) or (-1,-1)
-        print(f'{" "*indent} ({x:2d},{y:2d})  '
-              f'N {node.N:6d}  U {node.Q+node.u:6.4f}  '
-              f'Q {node.Q:6.4f}  u {node.u:6.4f}  P {node.P:6.4f}')
-        if not node.is_leaf():
-            children = sorted(node.next.items(), 
-                              key=lambda x: x[1].N, reverse=True)
-            children = cutoff and children[:cutoff] or children
-            for move, child in children:
-                self.print_tree(child, move, indent+2, cutoff=cutoff)
-
+def xy(move): return move // N, move % N
 
 def softmax(x):
     p = np.exp(x-np.max(x))
     p /= p.sum(axis=0)
     return p
 
-def xy(move): return move // N, move % N
+class Node(object):
+    """ definition of node used in Monte-Carlo search for policy pi
+    """
+    def __init__(self, move, prev=None):
+        self.move = move
+        self.is_expanded = False
+        self.prev = prev
+        self.next = {}
+        self.next_P = np.zeros([361], dtype=np.float32)
+        self.next_N = np.zeros([361], dtype=np.float32)
+        self.next_W = np.zeros([361], dtype=np.float32)
+
+    @property
+    def N(self):
+        return self.prev.next_N[self.move]
+
+    @N.setter
+    def N(self, value):
+        self.prev.next_N[self.move] = value
+
+    @property
+    def W(self):
+        return self.prev.next_W[self.move]
+
+    @N.setter
+    def W(self, value):
+        self.prev.next_W[self.move] = value
+
+    def next_Q(self):
+        return self.next_W / (self.next_N+1)
+
+    def next_u(self):
+        return C_PUCT * math.sqrt(self.N) * (self.next_P / (self.next_N+1))
+
+    def best_next(self):
+        """ Upper-confidence bound on Q-value
+        return argmax_a [ U(s,a) := Q(s,a) + u(s,a) ]
+        """
+        return np.argmax(self.next_Q() + self.next_u())
+
+    def print_tree(self, node, indent=2, cutoff=None):
+        """ recursively dumps node-tree
+        usage: node.print_tree(node, cutoff=5)
+        """
+        x, y = xy(self.move) 
+        N_ = not self.prev and self.next_N.sum() or self.N
+        P_ = not self.prev and -1 or self.prev.next_P[self.move]
+        Q_ = not self.prev and -1 or self.W / self.N
+        u_ = not self.prev and -1 \
+                            or C_PUCT * math.sqrt(self.prev.N) * P_ / (N_+1)
+        U_ = Q_ + u_
+        print(f'{" "*indent} ({x:2d},{y:2d})  N {N_:6d}  U {U_:6.4f}  '
+              f'Q {Q_:6.4f}  u {u_:6.4f}  P {P_:6.4f}')
+        if node.is_expanded:
+            args = np.argsort(self.next_Q() + self.next_u())
+            args = cutoff and args[-cutoff:][::-1]
+            children = [ node.next[arg] for arg in args ]
+            for child in children:
+                self.print_tree(child, indent+2, cutoff=cutoff)
+
 
 
 class TT(object):
