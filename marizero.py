@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 import os.path
 import random
+import pickle
 import policy
 from collections import deque
 from board import Board
@@ -145,13 +146,17 @@ class MariZero(object):
     def __init__(self, game=None):
         """ self.pi -> an instance of policy pi class, TT
         """
+        self.init_env()
         self.game = game
-        self.init_model()
         self.pi = policy.TT(self.model)
-        self.data = deque(maxlen=SIZE_DATA)
+
+    def init_env(self):
+        self.init_model()
+        self.load_episode()
+        self.load_self_plays()
 
     def init_model(self):
-        file = self.path_best_model_file()
+        file = self.path_data('model')
         self.model = self.load_model(file) 
         self.init_optim()
 
@@ -166,7 +171,7 @@ class MariZero(object):
         torch.save(self.model.state_dict(), file)
 
     def update_model(self, overturn=False): 
-        file = self.path_best_model_file()
+        file = self.path_data('model')
         if not file: overturn = True
         if overturn: 
             self.save_model(file)
@@ -178,8 +183,37 @@ class MariZero(object):
         self.optim = optim.Adam(self.model.parameters(), 
                                 weight_decay=L2_CONST, lr=LEARNING_RATE)
     
-    def path_best_model_file(self):
-        return f'./data/best_model.pt'
+    def load_episode(self):
+        file = self.path_data('episode')
+        if not os.path.isfile(file): self.episode = 1
+        else: self.episode = self.load(file)
+
+    def update_episode(self):
+        self.episode += 1
+        file = self.path_data('episode')
+        self.dump(self.episode, file)
+
+    def load_self_plays(self):
+        file = self.path_data('plays')
+        if os.path.isfile(file): self.data = self.load(file)
+        else: self.data = deque(maxlen=SIZE_DATA)
+
+    def save_self_plays(self):
+        file = self.path_data('plays')
+        if self.episode % 5 == 0: self.dump(self.data, file)
+
+    def path_data(self, name):
+        return {
+            'model': f'./data/best_model.pt',
+            'episode': f'./data/EPISODE',
+            'plays': f'./data/SELF_PLAYS',
+        }.get(name)
+
+    def dump(self, o, file):
+        with open(file, 'wb') as f: pickle.dump(o, f)
+
+    def load(self, file):
+        with open(file, 'rb') as f: return pickle.load(f)
 
     def augment_data(self, data):
         """ data augmentation using the symmetry of game board.
@@ -198,7 +232,7 @@ class MariZero(object):
             _z = np.repeat(z, len(_S))
             self.data.extend(zip(_S, _pi, _z))
             increment += len(_S)
-        print(f'data added  {increment:4d}\ttotal {len(self.data):6d}\n')
+        print(f'data added  {increment:4d}\ttotal {len(self.data):6d}')
 
     def sample_from_pi(self, pi):
         """ pi := ([move], [prob]) -> (best_move, pi_)
@@ -222,9 +256,12 @@ class MariZero(object):
         board = Board()
         _S, _pi, _turn = [], [], []
         self.pi.reset_tree()
+        print(f'\nepisode {self.episode:06d}  '
+              f'self-play', end='\t', flush=True)
         while True:
             pi = self.pi.fn_pi(board)
-            sys.exit()
+            # self.pi.root.print_tree(self.pi.root, cutoff=5)
+            # sys.exit()
             move, pi_ = self.sample_from_pi(pi)
             self.pi.update_root(move)
             _S.append(read_state(board))
@@ -238,6 +275,7 @@ class MariZero(object):
             _z = np.zeros(len(_turn))
             _z[_turn == winner] = 1
             _z[_turn != winner] = -1
+            print(f'{winner:2d} won  {board.moves:3d} moves')
             return zip(_S, _pi, _z)
         
     def train(self):
@@ -254,10 +292,11 @@ class MariZero(object):
         """
         self.model.train()
         while True:
-            for i in range(1,N_EPISODE+1):
-                print(f'episode {i:03d}  self-play')
+            for _ in range(N_EPISODE):
                 data = self.self_play()
                 self.augment_data(data)
+                self.update_episode()
+                self.save_self_plays()
 
             if len(self.data) < SIZE_BATCH: continue
             batch = random.sample(self.data, SIZE_BATCH)
