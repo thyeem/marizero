@@ -6,3 +6,4 @@ from marizero import MariZero
 
 
 mario = MariZero()
+mario.train()

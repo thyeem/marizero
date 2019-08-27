@@ -9,6 +9,7 @@ import policy
 from collections import deque
 from board import Board
 from const import Stone, N
+import sys
 
 CI = 10
 H1 = 32
@@ -197,7 +198,7 @@ class MariZero(object):
             _z = np.repeat(z, len(_S))
             self.data.extend(zip(_S, _pi, _z))
             increment += len(_S)
-        print(f'data added  {increment:4d}\ttotal {len(self.data):6d}')
+        print(f'data added  {increment:4d}\ttotal {len(self.data):6d}\n')
 
     def sample_from_pi(self, pi):
         """ pi := ([move], [prob]) -> (best_move, pi_)
@@ -223,6 +224,7 @@ class MariZero(object):
         self.pi.reset_tree()
         while True:
             pi = self.pi.fn_pi(board)
+            sys.exit()
             move, pi_ = self.sample_from_pi(pi)
             self.pi.update_root(move)
             _S.append(read_state(board))

@@ -6,7 +6,7 @@ from const import N
 import marizero as mario
 
 C_PUCT = 10
-N_SEARCH = 30
+N_SEARCH = 200
 
 class Node(object):
     """ definition of node used in Monte-Carlo search for policy pi
@@ -38,14 +38,14 @@ class Node(object):
         """
         x, y = move > -1 and (move//N, move%N) or (-1,-1)
         print(f'{" "*indent} ({x:2d},{y:2d})  '
-              f'N {node.N:6d}  Q {node.Q:6.4f}  '
-              f'u {node.u:6.4f}  P {node.P:6.4f}')
+              f'N {node.N:6d}  U {node.Q+node.u:6.4f}  '
+              f'Q {node.Q:6.4f}  u {node.u:6.4f}  P {node.P:6.4f}')
         if not node.is_leaf():
             children = sorted(node.next.items(), 
                               key=lambda x: x[1].N, reverse=True)
             children = cutoff and children[:cutoff] or children
             for move, child in children:
-                self.print_tree(child, move, indent+2)
+                self.print_tree(child, move, indent+2, cutoff=cutoff)
 
 
 def softmax(x):
@@ -122,8 +122,10 @@ class TT(object):
         the smaller tau, the more relying on the visit count.
 
         """
+        import sys
         for _ in range(num_search):
             self.search(deepcopy(board))
+        self.root.print_tree(self.root, cutoff=5)
         tau = board.moves < 5 and 1 or 1e-3
         moves, visits = zip(*[ (move, node.N) 
                                for move, node in self.root.next.items() ])
@@ -139,6 +141,7 @@ class TT(object):
         S = mario.read_state(board)
         S = torch.FloatTensor(S)
         logP, v = self.net(S)
+        v = v.flatten().item()
         logP += 1e-10
         P = np.exp(logP.flatten().data.numpy())
         P /= P.sum()
