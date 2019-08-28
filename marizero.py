@@ -9,21 +9,13 @@ import pickle
 import policy
 from collections import deque
 from board import Board
-from const import Stone, N
+from const import Stone, N, CI, H1, H2, H4, LEARNING_RATE, \
+                  L2_CONST, GAMMA, N_EPISODE, N_EPOCH, \
+                  SIZE_DATA, SIZE_BATCH, RATIO_OVERTURN
+
+
 import sys
 
-CI = 10
-H1 = 32
-H2 = 64
-H4 = 128
-LEARNING_RATE = 1e-3
-L2_CONST = 1e-4
-GAMMA = 0.99
-N_EPISODE = 1
-N_EPOCH = 5
-SIZE_DATA = 50000
-SIZE_BATCH = 1024
-RATIO_OVERTURN = 0.55
 
 class Net(nn.Module):
     """ network for both policy p and value function 
@@ -263,8 +255,6 @@ class MariZero(object):
             move, pi_ = self.sample_from_pi(pi)
 
             self.pi.update_root(move)
-            print()
-            self.pi.root.print_tree(self.pi.root, cutoff=5)
             sys.exit()
             _S.append(read_state(board))
             _pi.append(pi_)
@@ -326,15 +316,12 @@ class MariZero(object):
         """ interface responsible for answering game.py module
         """
         # TODO fix illegal move bug
-##         if board.moves > 0:
-##             x, y = board.get_last_move()
-##             self.pi.update_root(x*N+y)
-        self.pi.reset_tree()
-        pi = self.pi.fn_pi(board, 1600)
+        if board.moves > 0:
+            x, y = board.get_last_move()
+            self.pi.update_root(x*N+y)
+        pi = self.pi.fn_pi(board)
         move, _ = self.sample_from_pi(pi)
-
-        self.pi.root.print_tree(self.pi.root, cutoff=5)
-
+        #self.pi.root.print_tree(self.pi.root, cutoff=3)
         return xy(move)
 
 

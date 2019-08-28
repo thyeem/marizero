@@ -2,11 +2,10 @@ import math
 import numpy as np
 import torch
 from copy import deepcopy
-from const import N
+from collections import defaultdict
+from const import N, C_PUCT, N_SEARCH
 import marizero as mario
 
-C_PUCT = 0.5
-N_SEARCH = 20
 
 def xy(move): return move // N, move % N
 
@@ -15,17 +14,39 @@ def softmax(x):
     p /= p.sum(axis=0)
     return p
 
+
+class FakeNode(object):
+    """ 
+    for convenience, here introduced FakeNode. 
+    root.prev != None anymore, root node is just a normal node.
+    FakeNode.prev := None, and root.prev := FakeNode 
+    Thus, root.prev.prev == None.
+    [FakeNode] -> [root] -> [children...]
+
+    """
+    def __init__(self):
+        self.prev = None
+        self.next_W = defaultdict(float)
+        self.next_P = defaultdict(float)
+        self.next_N = defaultdict(float)
+        self.N = 0
+
+
 class Node(object):
     """ definition of node used in Monte-Carlo search for policy pi
     """
-    def __init__(self, move, prev=None):
+    def __init__(self, move=None, prev=None):
         self.move = move
         self.is_expanded = False
         self.prev = prev
         self.next = {}
-        self.next_P = np.zeros([361], dtype=np.float32)
-        self.next_N = np.zeros([361], dtype=np.float32)
-        self.next_W = np.zeros([361], dtype=np.float32)
+        self.next_P = np.zeros([N*N], dtype=np.float32)
+        self.next_W = np.zeros([N*N], dtype=np.float32)
+        self.next_N = np.zeros([N*N], dtype=np.float32)
+
+    @property
+    def Q(self):
+        return self.W / (self.N + 1)
 
     @property
     def N(self):
@@ -39,15 +60,16 @@ class Node(object):
     def W(self):
         return self.prev.next_W[self.move]
 
-    @N.setter
+    @W.setter
     def W(self, value):
         self.prev.next_W[self.move] = value
 
     def next_Q(self):
-        return self.next_W / (self.next_N+1)
+        return self.next_W / (self.next_N + 1)
 
     def next_u(self):
-        return C_PUCT * math.sqrt(self.N) * (self.next_P / (self.next_N+1))
+        return C_PUCT * math.sqrt(self.N) * \
+               (self.next_P / (self.next_N + 1))
 
     def best_next(self):
         """ Upper-confidence bound on Q-value
@@ -55,26 +77,53 @@ class Node(object):
         """
         return np.argmax(self.next_Q() + self.next_u())
 
+    
+    def select(self, board):
+        node = self
+        while node.is_expanded:
+            move = node.best_next()
+            if board.is_illegal_move(*xy(move)):
+                node.next_W[move] = -1e4
+                continue
+            board.make_move(*xy(move), True)
+            node = node.add_child(move)
+        return node
+
+    def add_child(self, move):
+        if not move in self.next:
+            self.next[move] = Node(move, self)
+        return self.next[move]
+
+    def expand(self, P):
+        self.is_expanded = True
+        self.next_P = P
+
+    def backup(self, v):
+        node = self
+        while node.prev is not None:
+            node.N += 1
+            node.W += v
+            v *= -1
+            node = node.prev
+
     def print_tree(self, node, indent=2, cutoff=None):
         """ recursively dumps node-tree
         usage: node.print_tree(node, cutoff=5)
         """
-        x, y = xy(self.move) 
-        N_ = not self.prev and self.next_N.sum() or self.N
-        P_ = not self.prev and -1 or self.prev.next_P[self.move]
-        Q_ = not self.prev and -1 or self.W / self.N
-        u_ = not self.prev and -1 \
-                            or C_PUCT * math.sqrt(self.prev.N) * P_ / (N_+1)
+        x, y = node.move and (xy(node.move)) or (-1, -1)
+        N_ = node.N
+        P_ = node.prev.next_P[node.move]
+        Q_ = node.Q
+        u_ = C_PUCT * math.sqrt(node.prev.N) * P_ / (N_ + 1)
         U_ = Q_ + u_
-        print(f'{" "*indent} ({x:2d},{y:2d})  N {N_:6d}  U {U_:6.4f}  '
+        print(f'{" "*indent} ({x:2d},{y:2d})  N {N_:6.0f}  U {U_:6.4f}  '
               f'Q {Q_:6.4f}  u {u_:6.4f}  P {P_:6.4f}')
         if node.is_expanded:
-            args = np.argsort(self.next_Q() + self.next_u())
-            args = cutoff and args[-cutoff:][::-1]
-            children = [ node.next[arg] for arg in args ]
+            args = np.argsort(node.next_N)
+            if cutoff: args = args[-cutoff:][::-1]
+            children = [ node.next[arg] for arg in args if arg in node.next ]
             for child in children:
                 self.print_tree(child, indent+2, cutoff=cutoff)
-
 
 
 class TT(object):
@@ -90,49 +139,33 @@ class TT(object):
 
     """
     def __init__(self, net):
-        self.root = Node(None, 1.)
         self.net = net
+        self.reset_tree()
 
     def reset_tree(self):
-        self.update_root(-1)
+        self.root = Node(None, FakeNode())
 
     def update_root(self, move):
         if move in self.root.next:
             self.root = self.root.next[move]
-            self.root.prev = None
+            self.root.prev = FakeNode()
         else:
-            self.root = Node(None, 1.)
-
-    def select(self, board):
-        node = self.root
-        while True:
-            if node.is_leaf(): return node
-            move, node = max(node.next.items(), key=lambda x: x[1].Q_plus_u())
-            assert board.is_illegal_move(*xy(move)) == 0
-            board.make_move(*xy(move), True)
-
-    def expand(self, node, P):
-        for move in range(len(P)):
-            if P[move] < 1e-10: continue
-            node.next[move] = Node(node, P[move])
-
-    def backup(self, node, v):
-        node.N += 1
-        node.Q += 1.*(v - node.Q) / node.N
-        if node.prev: self.backup(node.prev, -v)
+            self.reset_tree()
 
     def search(self, board):
         """ single search without any MC rollouts
         process (select -> expand and evaluate -> backup) 1x
         """
-        leaf = self.select(board)
+        turn_to_play = board.whose_turn()
+        leaf = self.root.select(board)
         winner = board.check_game_end()
         if winner:
-            v = -1.
+            v = winner == turn_to_play and -1.0 or 1.0
         else:
             P, v = self.fn_policy_value(board)
-            self.expand(leaf, P)
-        self.backup(leaf, -v)
+            leaf.expand(P)
+        leaf.backup(-v)
+
 
     def fn_pi(self, board, num_search=N_SEARCH):
         """ board -> ( [move], [prob] ) as two-cols form of pi(a|s) 
@@ -143,8 +176,7 @@ class TT(object):
         the smaller tau, the more relying on the visit count.
 
         """
-        for _ in range(num_search):
-            self.search(deepcopy(board))
+        for _ in range(num_search): self.search(deepcopy(board))
         tau = board.moves < 5 and 1 or 1e-3
         moves, visits = zip(*[ (move, node.N) 
                                for move, node in self.root.next.items() ])
@@ -161,12 +193,7 @@ class TT(object):
         S = torch.FloatTensor(S)
         logP, v = self.net(S)
         v = v.flatten().item()
-        logP += 1e-10
         P = np.exp(logP.flatten().data.numpy())
-        P /= P.sum()
-        invalid = [ move for move in range(len(P)) 
-                    if board.is_illegal_move(*xy(move)) ] 
-        P[invalid] = -1
         return P, v
 
 
