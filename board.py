@@ -78,15 +78,20 @@ class Board(object):
 
     def check_game_end(self):
         x, y = self.get_last_move()
-        if self.scoreB >= WP or self.scoreW >= WP: return self.who_won()
+        if self.scoreB >= WP or self.scoreW >= WP:
+            return self.who_won()
         if self.check_game_end_along(x, y, -1,  0) + \
-           self.check_game_end_along(x, y,  1,  0) + 1 == GOAL: return self.who_won()
+           self.check_game_end_along(x, y,  1,  0) + 1 == GOAL: 
+            return self.who_won()
         if self.check_game_end_along(x, y,  0, -1) + \
-           self.check_game_end_along(x, y,  0,  1) + 1 == GOAL: return self.who_won()
+           self.check_game_end_along(x, y,  0,  1) + 1 == GOAL: 
+            return self.who_won()
         if self.check_game_end_along(x, y, -1, -1) + \
-           self.check_game_end_along(x, y,  1,  1) + 1 == GOAL: return self.who_won()
+           self.check_game_end_along(x, y,  1,  1) + 1 == GOAL: 
+            return self.who_won()
         if self.check_game_end_along(x, y, -1,  1) + \
-           self.check_game_end_along(x, y,  1, -1) + 1 == GOAL: return self.who_won()
+           self.check_game_end_along(x, y,  1, -1) + 1 == GOAL: 
+            return self.who_won()
         return False
 
     def check_game_end_along(self, x, y, dx, dy):

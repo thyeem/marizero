@@ -1,5 +1,3 @@
-import curses 
-
 class Stone:
     EMPTY = 0
     BLACK = 1
@@ -31,9 +29,9 @@ LEARNING_RATE = 1e-3
 L2_CONST = 1e-4
 GAMMA = 0.99
 N_EPISODE = 1
-N_EPOCH = 5
-SIZE_DATA = 50000
+N_STEPS = 10
 SIZE_BATCH = 1024
+SIZE_DATA = 50000
 RATIO_OVERTURN = 0.55
 C_PUCT = 1.0
 N_SEARCH = 400

@@ -5,7 +5,6 @@ import random
 from marizero import MariZero
 from board import Board
 
-
 mario = MariZero()
 
 b = Board()

@@ -1,11 +1,10 @@
 import math
 import numpy as np
 import torch
+import marizero as mario
 from copy import deepcopy
 from collections import defaultdict
 from const import N, C_PUCT, N_SEARCH
-import marizero as mario
-
 
 def xy(move): return move // N, move % N
 
@@ -76,7 +75,6 @@ class Node(object):
         return argmax_a [ U(s,a) := Q(s,a) + u(s,a) ]
         """
         return np.argmax(self.next_Q() + self.next_u())
-
     
     def select(self, board):
         node = self
@@ -166,9 +164,8 @@ class TT(object):
             leaf.expand(P)
         leaf.backup(-v)
 
-
     def fn_pi(self, board, num_search=N_SEARCH):
-        """ board -> ( [move], [prob] ) as two-cols form of pi(a|s) 
+        """ board -> ( pi(a|s) as [prob] )
         get policy pi as defined in the zero paper
         pi(a|s) = N(s,a)^(1/tau) / Sigma_b N(s,b)^(1/tau)
         tau: temperature controling the degree of exploration 
@@ -178,10 +175,9 @@ class TT(object):
         """
         for _ in range(num_search): self.search(deepcopy(board))
         tau = board.moves < 5 and 1 or 1e-3
-        moves, visits = zip(*[ (move, node.N) 
-                               for move, node in self.root.next.items() ])
-        probs = softmax(1./tau * np.log(np.array(visits)+1) + 1e-10)
-        return (moves, probs)
+        visits = self.root.next_N
+        pi = softmax(1./tau * np.log(np.array(visits)+1) + 1e-10)
+        return pi
 
     def fn_policy_value(self, board):
         """ board -> ( P(s,-), v )

@@ -6,15 +6,13 @@ import numpy as np
 import os.path
 import random
 import pickle
+import time
 import policy
 from collections import deque
 from board import Board
 from const import Stone, N, CI, H1, H2, H4, LEARNING_RATE, \
-                  L2_CONST, GAMMA, N_EPISODE, N_EPOCH, \
+                  L2_CONST, GAMMA, N_EPISODE, N_STEPS, \
                   SIZE_DATA, SIZE_BATCH, RATIO_OVERTURN
-
-
-import sys
 
 
 class Net(nn.Module):
@@ -145,7 +143,7 @@ class MariZero(object):
     def init_env(self):
         self.init_model()
         self.load_episode()
-        self.load_self_plays()
+        self.load_selfplays()
 
     def init_model(self):
         file = self.path_data('model')
@@ -185,20 +183,20 @@ class MariZero(object):
         file = self.path_data('episode')
         self.dump(self.episode, file)
 
-    def load_self_plays(self):
+    def load_selfplays(self):
         file = self.path_data('plays')
         if os.path.isfile(file): self.data = self.load(file)
         else: self.data = deque(maxlen=SIZE_DATA)
 
-    def save_self_plays(self):
+    def save_selfplays(self):
         file = self.path_data('plays')
-        if self.episode % 5 == 0: self.dump(self.data, file)
+        if self.episode % 100 == 0: self.dump(self.data, file)
 
     def path_data(self, name):
         return {
             'model': f'./data/best_model.pt',
             'episode': f'./data/EPISODE',
-            'plays': f'./data/SELF_PLAYS',
+            'plays': f'./data/SELFPLAYS',
         }.get(name)
 
     def dump(self, o, file):
@@ -227,19 +225,13 @@ class MariZero(object):
         print(f'data added  {increment:4d}\ttotal {len(self.data):6d}')
 
     def sample_from_pi(self, pi):
-        """ pi := ([move], [prob]) -> (best_move, pi_)
-        for convenience, pi(-|s) has this two-cols form.
-        pi_ := 1-d vector of pi(s) for training. 
-        be aware of pi_ != pi(-|s).
+        """ pi(-|s) as [prob] -> best_move
         exploration using Dirichlet noise was not applied.
         Literally sampling, but it depends on the temperature, tau
         when pi is calculated. Converged to the best move as tau -> 0
         """
-        moves, probs = pi
-        move = np.random.choice(moves, 1, p=probs).item()
-        pi_ = np.zeros(N*N)
-        pi_[list(moves)] = probs
-        return move, pi_ 
+        best_move = np.random.choice(range(N*N), p=pi)
+        return best_move
 
     def self_play(self):
         """ None -> [ (state S, pi, z), ]
@@ -248,33 +240,54 @@ class MariZero(object):
         board = Board()
         _S, _pi, _turn = [], [], []
         self.pi.reset_tree()
+        tick = time.time()
         print(f'\nepisode {self.episode:06d}  '
-              f'self-play', end='\t', flush=True)
+              f'self-play', end='  ', flush=True)
         while True:
             pi = self.pi.fn_pi(board)
-            move, pi_ = self.sample_from_pi(pi)
-
+            move = self.sample_from_pi(pi)
             self.pi.update_root(move)
-            sys.exit()
             _S.append(read_state(board))
-            _pi.append(pi_)
+            _pi.append(pi)
             _turn.append(board.whose_turn())
 
             board.make_move(*xy(move), True)
             winner = board.check_game_end()
             if not winner: continue
+            tock = time.time()
             _turn = np.array(_turn)
             _z = np.zeros(len(_turn))
             _z[_turn == winner] = 1
             _z[_turn != winner] = -1
-            print(f'{winner:2d} won  {board.moves:3d} moves')
+            print(f'{winner == 1 and "black" or "white"} won  '
+                  f'{board.moves:3d} moves  {(tock-tick)/60:.2f} mins')
             return zip(_S, _pi, _z)
+
+    def gen_training_data(self, num_games):
+        for _ in range(num_games):
+            data = self.self_play()
+            self.augment_data(data)
+            self.update_episode()
+            self.save_selfplays()
+
+    def get_training_data(self, batch_size):
+        """ get mini-batch from self-play data
+        S -> input: board state, from read_state(board)
+        pi -> 1-d vector of pi(-|s)
+        z -> reward, target of value network
+        """
+        batch = random.sample(self.data, batch_size)
+        S, pi, z = zip(*batch)
+        S = torch.cat([ torch.FloatTensor(x) for x in S ], dim=0)
+        pi = torch.stack([ torch.FloatTensor(x) for x in pi ])
+        z = torch.cat([ torch.FloatTensor([x]) for x in z ], dim=0)
+        return S, pi, z
         
     def train(self):
         """
         loss := (z-v)^2 - pi'log(p) + c||theta||^2
         batch from self.data := [ (S, pi, z), ]
-        S -> input 
+        S -> input: board state, from read_state(board)
         z -> reward, target of value network
         v -> output of value network
         cross entropy of pi(a|s) and P(s,a)
@@ -284,20 +297,10 @@ class MariZero(object):
         """
         self.model.train()
         while True:
-            for _ in range(N_EPISODE):
-                data = self.self_play()
-                self.augment_data(data)
-                self.update_episode()
-                self.save_self_plays()
-
+            self.gen_training_data(N_EPISODE)
             if len(self.data) < SIZE_BATCH: continue
-            batch = random.sample(self.data, SIZE_BATCH)
-            S, pi, z = zip(*batch)
-            S = torch.cat([ torch.FloatTensor(x) for x in S ], dim=0)
-            pi = torch.stack([ torch.FloatTensor(x) for x in pi ])
-            z = torch.cat([ torch.FloatTensor([x]) for x in z ], dim=0)
-
-            for i in range(1,N_EPOCH+1):
+            for i in range(N_STEPS):
+                S, pi, z = self.get_training_data(SIZE_BATCH)
                 self.optim.zero_grad()
                 logP, v = self.model(S)
                 loss_v = F.mse_loss(v.view(-1), z)
@@ -305,7 +308,7 @@ class MariZero(object):
                 loss = loss_v + loss_P
                 loss.backward()
                 self.optim.step()
-                print(f'epoch {i:02d}  loss {loss:.6f}')
+                print(f'steps {i+1:02d}  loss {loss:.6f}')
             overturn = self.evaluate_model()
             self.update_model(overturn)
 
@@ -315,14 +318,13 @@ class MariZero(object):
     def next_move(self, board):
         """ interface responsible for answering game.py module
         """
-        # TODO fix illegal move bug
         if board.moves > 0:
             x, y = board.get_last_move()
             self.pi.update_root(x*N+y)
         pi = self.pi.fn_pi(board)
-        move, _ = self.sample_from_pi(pi)
+        best_move = self.sample_from_pi(pi)
         #self.pi.root.print_tree(self.pi.root, cutoff=3)
-        return xy(move)
+        return xy(best_move)
 
 
 if __name__ == '__main__':
